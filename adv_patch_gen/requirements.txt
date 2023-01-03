@@ -1,0 +1,2 @@
+# specific to adv_patch_gen, yolov5 vase requirements should be installed as well
+tensorboardX==2.5.1
