@@ -8,12 +8,14 @@ e.g.:    python train_patch.py visdrone_v1_4cat_obj_only_tiny_gray_v1
 """
 import os
 import time
+import json
 import logging
 import subprocess
 from typing import Optional
 
 from PIL import Image
 from tqdm import tqdm
+from easydict import EasyDict as edict
 
 import torch
 import torch.nn.functional as F
@@ -36,7 +38,7 @@ class PatchTrainer:
     Module for training on dataset to generate adv patches
     """
 
-    def __init__(self, config: dict):
+    def __init__(self, config: edict):
         self.config = config
         self.dev = config.device
 
@@ -80,9 +82,23 @@ class PatchTrainer:
         """
 
         # make output dir
-        patch_dir = os.path.join('./saved_patches', self.config.patch_name)
+        patch_dir = os.path.join('./saved_patches', self.config.patch_name + f'_{time.strftime("%Y%m%d-%H%M%S")}')
         os.makedirs(patch_dir, exist_ok=True)
         log_file = os.path.join(patch_dir, self.config.patch_name + '_log.txt')
+        # dump config json file
+        with open(os.path.join(patch_dir, "config.json"), 'w', encoding='utf-8') as f:
+            json.dump(self.config, f, ensure_ascii=False, indent=4)
+
+        # fix loss targets
+        loss_target = self.config.loss_target
+        if loss_target == "obj":
+            self.config.loss_target = lambda obj, cls: obj
+        elif loss_target == "cls":
+            self.config.loss_target = lambda obj, cls: cls
+        elif loss_target == "obj * cls":
+            self.config.loss_target = lambda obj, cls: obj * cls
+        else:
+            raise NotImplementedError(f"Loss target {loss_target} has not been implemented")
 
         # python logging
         ###############################################################################
@@ -124,7 +140,7 @@ class PatchTrainer:
         adv_patch_cpu.requires_grad = True
 
         optimizer = optim.Adam([adv_patch_cpu], lr=self.config.start_lr, amsgrad=True)
-        scheduler = self.config.scheduler_factory(optimizer)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=50)
 
         et0 = time.time()
         for epoch in range(self.config.n_epochs):
