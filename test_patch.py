@@ -68,12 +68,12 @@ class PatchTester:
         patch_results = []
 
         # make dirs
-        cleandir = osp.join(self.cfg.savedir, 'clean/')
-        txtdir = osp.join(self.cfg.savedir, 'clean/', 'yolo-labels/')
-        properdir = osp.join(self.cfg.savedir, 'proper_patched/')
-        txtdir2 = osp.join(self.cfg.savedir, 'proper_patched/', 'yolo-labels/')
-        randomdir = osp.join(self.cfg.savedir, 'random_patched/')
-        txtdir3 = osp.join(self.cfg.savedir, 'random_patched/', 'yolo-labels/')
+        cleandir = osp.join(self.cfg.savedir, 'clean/', 'images/')
+        txtdir = osp.join(self.cfg.savedir, 'clean/', 'labels/')
+        properdir = osp.join(self.cfg.savedir, 'proper_patched/', 'images/')
+        txtdir2 = osp.join(self.cfg.savedir, 'proper_patched/', 'labels/')
+        randomdir = osp.join(self.cfg.savedir, 'random_patched/', 'images/')
+        txtdir3 = osp.join(self.cfg.savedir, 'random_patched/', 'labels/')
         jsondir = osp.join(self.cfg.savedir, 'jsons')
         for directory in (cleandir, txtdir, properdir, txtdir2, randomdir, txtdir3, jsondir):
             print(f"Creating output dir: {directory}")

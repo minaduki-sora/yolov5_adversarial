@@ -43,7 +43,7 @@ class PatchTrainer:
 
         model = DetectMultiBackend(cfg.weights_file, device=select_device(self.dev), dnn=False, data=None, fp16=False)
         self.model = model.eval().to(self.dev)
-        self.patch_transformer = PatchTransformer(cfg.target_size_frac).to(self.dev)
+        self.patch_transformer = PatchTransformer(cfg.target_size_frac, self.dev).to(self.dev)
         self.patch_applier = PatchApplier(cfg.patch_alpha).to(self.dev)
         self.prob_extractor = MaxProbExtractor(cfg).to(self.dev)
         self.sal_loss = SaliencyLoss().to(self.dev)
@@ -56,7 +56,7 @@ class PatchTrainer:
 
         # set log dir
         cfg.log_dir = osp.join(cfg.log_dir, f'{time.strftime("%Y%m%d-%H%M%S")}_{cfg.patch_name}')
-        self.writer = self.init_tensorboard(cfg.log_dir)
+        self.writer = self.init_tensorboard(cfg.log_dir, cfg.tensorboard_port)
 
         # load dataset
         self.train_loader = torch.utils.data.DataLoader(
@@ -70,7 +70,7 @@ class PatchTrainer:
             num_workers=10)
         self.epoch_length = len(self.train_loader)
 
-    def init_tensorboard(self, log_dir: str = None, port: int = 8994, run_tb=True, ):
+    def init_tensorboard(self, log_dir: str = None, port: int = 6006, run_tb=True):
         """
         Initialize tensorboard with optional name
         """
@@ -106,7 +106,8 @@ class PatchTrainer:
         elif loss_target == "obj * cls":
             self.cfg.loss_target = lambda obj, cls: obj * cls
         else:
-            raise NotImplementedError(f"Loss target {loss_target} not been implemented")
+            raise NotImplementedError(
+                f"Loss target {loss_target} not been implemented")
 
         # python logging
         ###############################################################################
@@ -168,7 +169,7 @@ class PatchTrainer:
                     img_batch = img_batch.to(self.dev)
                     lab_batch = lab_batch.to(self.dev)
                     if (i_batch % 100) == 0:
-                        logging.info('TRAINING EPOCH %i, BATCH %i', epoch, i_batch)
+                        logging.info("TRAINING EPOCH %i, BATCH %i", epoch, i_batch)
                     adv_patch = adv_patch_cpu.to(self.dev)
                     adv_batch_t = self.patch_transformer(
                         adv_patch, lab_batch, self.cfg.model_in_sz, do_rotate=True, rand_loc=False)
