@@ -4,6 +4,7 @@ Training code for Adversarial patch training
 python train_patch.py --cfg config_json_file
 """
 import os
+import os.path as osp
 import time
 import json
 import logging
@@ -20,6 +21,7 @@ from torch import optim, autograd
 from torchvision import transforms
 
 from tensorboardX import SummaryWriter
+from tensorboard import program
 
 from models.common import DetectMultiBackend
 from utils.torch_utils import select_device
@@ -47,7 +49,14 @@ class PatchTrainer:
         self.sal_loss = SaliencyLoss().to(self.dev)
         self.nps_loss = NPSLoss(cfg.triplet_printfile, cfg.patch_size).to(self.dev)
         self.tv_loss = TotalVariationLoss().to(self.dev)
-        self.writer = self.init_tensorboard(cfg.patch_name)
+
+        # freeze entire model
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        # set log dir
+        cfg.log_dir = osp.join(cfg.log_dir, f'{time.strftime("%Y%m%d-%H%M%S")}_{cfg.patch_name}')
+        self.writer = self.init_tensorboard(cfg.log_dir)
 
         # load dataset
         self.train_loader = torch.utils.data.DataLoader(
@@ -60,31 +69,33 @@ class PatchTrainer:
             shuffle=True,
             num_workers=10)
         self.epoch_length = len(self.train_loader)
-        print(f'One epoch is {len(self.train_loader)}')
 
-    def init_tensorboard(self, name: Optional[str] = None, port: int = 8994):
+    def init_tensorboard(self, log_dir: str = None, port: int = 8994, run_tb=True, ):
         """
         Initialize tensorboard with optional name
         """
-        # subprocess.Popen(['tensorboard', '--logdir=runs', f'--port={port}'])
-        if name is not None:
-            time_str = time.strftime("%Y%m%d-%H%M%S")
-            return SummaryWriter(f'runs/{time_str}_{name}')
-        else:
-            return SummaryWriter()
+        if run_tb:
+            tboard = program.TensorBoard()
+            tboard.configure(argv=[None, "--logdir", log_dir, "--port", str(port)])
+            url = tboard.launch()
+            print(f"Tensorboard logger started on {url}")
+
+        if log_dir:
+            return SummaryWriter(log_dir)
+        return SummaryWriter()
 
     def train(self) -> None:
         """
         Optimize a patch to generate an adversarial example.
         """
 
-        # make output dir
-        patch_dir = os.path.join('./saved_patches', self.cfg.patch_name + f'_{time.strftime("%Y%m%d-%H%M%S")}')
+        # make output dirs
+        patch_dir = osp.join(self.cfg.log_dir, "patches")
         os.makedirs(patch_dir, exist_ok=True)
-        log_file = os.path.join(patch_dir, self.cfg.patch_name + '_log.txt')
+        log_file = osp.join(self.cfg.log_dir, 'log.txt')
         # dump cfg json file
-        with open(os.path.join(patch_dir, "cfg.json"), 'w', encoding='utf-8') as f:
-            json.dump(self.cfg, f, ensure_ascii=False, indent=4)
+        with open(osp.join(self.cfg.log_dir, "cfg.json"), 'w', encoding='utf-8') as json_f:
+            json.dump(self.cfg, json_f, ensure_ascii=False, indent=4)
 
         # fix loss targets
         loss_target = self.cfg.loss_target
@@ -95,7 +106,7 @@ class PatchTrainer:
         elif loss_target == "obj * cls":
             self.cfg.loss_target = lambda obj, cls: obj * cls
         else:
-            raise NotImplementedError(f"Loss target {loss_target} has not been implemented")
+            raise NotImplementedError(f"Loss target {loss_target} not been implemented")
 
         # python logging
         ###############################################################################
@@ -136,19 +147,21 @@ class PatchTrainer:
             adv_patch_cpu = self.read_image(self.cfg.patch_src)
         adv_patch_cpu.requires_grad = True
 
-        optimizer = optim.Adam([adv_patch_cpu], lr=self.cfg.start_lr, amsgrad=True)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=50)
+        optimizer = optim.Adam(
+            [adv_patch_cpu], lr=self.cfg.start_lr, amsgrad=True)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, 'min', patience=50)
 
         et0 = time.time()
         for epoch in range(self.cfg.n_epochs):
-            out_patch_path = os.path.join(
-                patch_dir, self.cfg.patch_name + '_epoch' + str(epoch) + '.jpg')
+            out_patch_path = osp.join(
+                patch_dir, f"{self.cfg.patch_name}_epoch_{epoch}.jpg")
             ep_det_loss = 0
             ep_nps_loss = 0
             ep_tv_loss = 0
             ep_loss = 0
-            bt0 = time.time()
-            for i_batch, (img_batch, lab_batch) in tqdm(enumerate(self.train_loader), 
+
+            for i_batch, (img_batch, lab_batch) in tqdm(enumerate(self.train_loader),
                                                         desc=f'Running epoch {epoch}',
                                                         total=self.epoch_length):
                 with autograd.detect_anomaly():
@@ -164,9 +177,10 @@ class PatchTrainer:
                     p_img_batch = F.interpolate(
                         p_img_batch, (self.cfg.model_in_sz[1], self.cfg.model_in_sz[0]))
 
-                    img = p_img_batch[1, :, :, ]
-                    img = transforms.ToPILImage()(img.detach().cpu())
-                    # img.show()
+                    if self.cfg.debug_mode:
+                        img = p_img_batch[1, :, :, ]
+                        img = transforms.ToPILImage()(img.detach().cpu())
+                        img.save(osp.join(self.cfg.log_dir, "patch_applied_imgs", f"e{epoch}.jpg"))
 
                     output = self.model(p_img_batch)[0]
                     max_prob = self.prob_extractor(output)
@@ -190,8 +204,7 @@ class PatchTrainer:
                     # keep patch in image range
                     adv_patch_cpu.data.clamp_(0, 1)
 
-                    bt1 = time.time()
-                    if i_batch % 5 == 0:
+                    if i_batch % 10 == 0:
                         iteration = self.epoch_length * epoch + i_batch
                         self.writer.add_scalar(
                             'total_loss', loss.detach().cpu().numpy(), iteration)
@@ -212,7 +225,6 @@ class PatchTrainer:
                     else:
                         del adv_batch_t, output, max_prob, det_loss, p_img_batch, nps_loss, tv_loss, loss
                         torch.cuda.empty_cache()
-                    bt0 = time.time()
             et1 = time.time()
             ep_det_loss = ep_det_loss/len(self.train_loader)
             ep_nps_loss = ep_nps_loss/len(self.train_loader)
@@ -228,8 +240,8 @@ class PatchTrainer:
                 logging.info("   TV LOSS: %s", ep_tv_loss)
                 logging.info("EPOCH TIME: %s", et1 - et0)
 
-                im = transforms.ToPILImage('RGB')(adv_patch_cpu)
-                im.save(out_patch_path)
+                img = transforms.ToPILImage('RGB')(adv_patch_cpu)
+                img.save(out_patch_path)
                 del adv_batch_t, output, max_prob, det_loss, p_img_batch, nps_loss, tv_loss, loss
                 torch.cuda.empty_cache()
             et0 = time.time()
@@ -266,7 +278,7 @@ class PatchTrainer:
 def main():
     parser = get_argparser()
     args = parser.parse_args()
-    cfg = load_config_object(args.cfg)
+    cfg = load_config_object(args.config)
     trainer = PatchTrainer(cfg)
     trainer.train()
 
