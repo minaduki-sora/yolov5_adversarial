@@ -18,10 +18,11 @@ class PatchTransformer(nn.Module):
 
     """
 
-    def __init__(self, target_size_frac: float = 0.35):
+    def __init__(self, target_size_frac: float = 0.35, dev: str = "cuda"):
 
         super(PatchTransformer, self).__init__()
         self.target_size_frac = target_size_frac  # Originally 0.2
+        self.dev=dev
         self.min_contrast = 0.8
         self.max_contrast = 1.2
         self.min_brightness = -0.1
@@ -44,24 +45,24 @@ class PatchTransformer(nn.Module):
         # Contrast, brightness and noise transforms
 
         # Create random contrast tensor
-        contrast = torch.cuda.FloatTensor(batch_size).uniform_(
-            self.min_contrast, self.max_contrast)
+        contrast = torch.FloatTensor(batch_size).uniform_(
+            self.min_contrast, self.max_contrast).to(self.dev)
         contrast = contrast.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
         contrast = contrast.expand(-1, -1, adv_batch.size(-3),
                                    adv_batch.size(-2), adv_batch.size(-1))
-        contrast = contrast.cuda()
+        contrast = contrast.to(self.dev)
 
         # Create random brightness tensor
-        brightness = torch.cuda.FloatTensor(batch_size).uniform_(
-            self.min_brightness, self.max_brightness)
+        brightness = torch.FloatTensor(batch_size).uniform_(
+            self.min_brightness, self.max_brightness).to(self.dev)
         brightness = brightness.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
         brightness = brightness.expand(-1, -1, adv_batch.size(-3),
                                        adv_batch.size(-2), adv_batch.size(-1))
-        brightness = brightness.cuda()
+        brightness = brightness.to(self.dev)
 
         # Create random noise tensor
-        noise = torch.cuda.FloatTensor(
-            adv_batch.size()).uniform_(-1, 1) * self.noise_factor
+        noise = torch.FloatTensor(
+            adv_batch.size()).uniform_(-1, 1).to(self.dev) * self.noise_factor
 
         # Apply contrast/brightness/noise, clamp
         adv_batch = adv_batch * contrast + brightness + noise
@@ -75,7 +76,7 @@ class PatchTransformer(nn.Module):
         cls_mask = cls_mask.expand(-1, -1, -1, adv_batch.size(3))
         cls_mask = cls_mask.unsqueeze(-1)
         cls_mask = cls_mask.expand(-1, -1, -1, -1, adv_batch.size(4))
-        msk_batch = torch.cuda.FloatTensor(cls_mask.size()).fill_(1) - cls_mask
+        msk_batch = torch.FloatTensor(cls_mask.size()).fill_(1).to(self.dev) - cls_mask
 
         # Pad patch and mask to image dimensions
         patch_pad = nn.ConstantPad2d(
@@ -86,14 +87,13 @@ class PatchTransformer(nn.Module):
         # Rotation and rescaling transforms
         anglesize = (lab_batch.size(0) * lab_batch.size(1))
         if do_rotate:
-            angle = torch.cuda.FloatTensor(anglesize).uniform_(
-                self.minangle, self.maxangle)
+            angle = torch.FloatTensor(anglesize).uniform_(self.minangle, self.maxangle).to(self.dev)
         else:
-            angle = torch.cuda.FloatTensor(anglesize).fill_(0)
+            angle = torch.FloatTensor(anglesize).fill_(0).to(self.dev)
 
         # Resizes and rotates
         current_patch_size = adv_patch.size(-1)
-        lab_batch_scaled = torch.cuda.FloatTensor(lab_batch.size()).fill_(0)
+        lab_batch_scaled = torch.FloatTensor(lab_batch.size()).fill_(0).to(self.dev)
         lab_batch_scaled[:, :, 1] = lab_batch[:, :, 1] * img_size[0]
         lab_batch_scaled[:, :, 2] = lab_batch[:, :, 2] * img_size[0]
         lab_batch_scaled[:, :, 3] = lab_batch[:, :, 3] * img_size[0]
@@ -107,10 +107,10 @@ class PatchTransformer(nn.Module):
         targetoff_y = lab_batch[:, :, 4].view(np.prod(batch_size))
         if (rand_loc):
             off_x = targetoff_x * \
-                (torch.cuda.FloatTensor(targetoff_x.size()).uniform_(-0.4, 0.4))
+                (torch.FloatTensor(targetoff_x.size()).uniform_(-0.4, 0.4).to(self.dev))
             target_x = target_x + off_x
             off_y = targetoff_y * \
-                (torch.cuda.FloatTensor(targetoff_y.size()).uniform_(-0.4, 0.4))
+                (torch.FloatTensor(targetoff_y.size()).uniform_(-0.4, 0.4).to(self.dev))
             target_y = target_y + off_y
         scale = target_size / current_patch_size
         scale = scale.view(anglesize)
@@ -125,7 +125,7 @@ class PatchTransformer(nn.Module):
         cos = torch.cos(angle)
 
         # Theta = rotation,rescale matrix
-        theta = torch.cuda.FloatTensor(anglesize, 2, 3).fill_(0)
+        theta = torch.FloatTensor(anglesize, 2, 3).fill_(0).to(self.dev)
         theta[:, 0, 0] = cos/scale
         theta[:, 0, 1] = sin/scale
         theta[:, 0, 2] = tx*cos/scale+ty*sin/scale
