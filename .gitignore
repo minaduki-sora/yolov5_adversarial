@@ -254,3 +254,6 @@ com_crashlytics_export_strings.xml
 crashlytics.properties
 crashlytics-build.properties
 fabric.properties
+
+# exceptions for adversarial patch config base file
+!adv_patch_gen/configs/base.json
