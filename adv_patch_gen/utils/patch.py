@@ -32,10 +32,11 @@ class PatchTransformer(nn.Module):
         self.maxangle = 20 / 180 * math.pi
         self.medianpooler = MedianPool2d(7, same=True)
 
-    def forward(self, adv_patch, lab_batch, img_size, do_rotate=True, rand_loc=True):
+    def forward(self, adv_patch, lab_batch, model_in_sz, do_rotate=True, rand_loc=True):
         adv_patch = self.medianpooler(adv_patch.unsqueeze(0))
+        m_h, m_w = model_in_sz
         # Determine size of padding
-        pad = (img_size[0] - adv_patch.size(-1)) / 2
+        pad = (m_w - adv_patch.size(-1)) / 2
         # Make a batch of patches
         adv_patch = adv_patch.unsqueeze(0)
         adv_batch = adv_patch.expand(
@@ -94,10 +95,10 @@ class PatchTransformer(nn.Module):
         # Resizes and rotates
         current_patch_size = adv_patch.size(-1)
         lab_batch_scaled = torch.FloatTensor(lab_batch.size()).fill_(0).to(self.dev)
-        lab_batch_scaled[:, :, 1] = lab_batch[:, :, 1] * img_size[0]
-        lab_batch_scaled[:, :, 2] = lab_batch[:, :, 2] * img_size[0]
-        lab_batch_scaled[:, :, 3] = lab_batch[:, :, 3] * img_size[0]
-        lab_batch_scaled[:, :, 4] = lab_batch[:, :, 4] * img_size[0]
+        lab_batch_scaled[:, :, 1] = lab_batch[:, :, 1] * m_w
+        lab_batch_scaled[:, :, 2] = lab_batch[:, :, 2] * m_w
+        lab_batch_scaled[:, :, 3] = lab_batch[:, :, 3] * m_w
+        lab_batch_scaled[:, :, 4] = lab_batch[:, :, 4] * m_w
         target_size = torch.sqrt(((lab_batch_scaled[:, :, 3].mul(self.target_size_frac)) ** 2)
                                  + ((lab_batch_scaled[:, :, 4].mul(self.target_size_frac)) ** 2))
 
@@ -105,7 +106,7 @@ class PatchTransformer(nn.Module):
         target_y = lab_batch[:, :, 2].view(np.prod(batch_size))
         targetoff_x = lab_batch[:, :, 3].view(np.prod(batch_size))
         targetoff_y = lab_batch[:, :, 4].view(np.prod(batch_size))
-        if (rand_loc):
+        if rand_loc:
             off_x = targetoff_x * \
                 (torch.FloatTensor(targetoff_x.size()).uniform_(-0.4, 0.4).to(self.dev))
             target_x = target_x + off_x
@@ -141,10 +142,6 @@ class PatchTransformer(nn.Module):
         msk_batch_t = msk_batch_t.view(s[0], s[1], s[2], s[3], s[4])
 
         adv_batch_t = torch.clamp(adv_batch_t, 0.000001, 0.999999)
-        #img = msk_batch_t[0, 0, :, :, :].detach().cpu()
-        #img = transforms.ToPILImage()(img)
-        # img.show()
-        # exit()
 
         return adv_batch_t * msk_batch_t
 

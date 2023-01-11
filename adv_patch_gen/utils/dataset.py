@@ -24,11 +24,11 @@ class YOLODataset(Dataset):
         image_dir: Directory containing the images of the YOLO format dataset.
         label_dir: Directory containing the labels of the YOLO format dataset.
         max_labels: max number labels to use for each image
-        imgsize: (width, height) of image
+        model_in_sz: model input image size (height, width)
         shuffle: Whether or not to shuffle the dataset.
     """
 
-    def __init__(self, image_dir: str, label_dir: str, max_labels: int, imgsize: Tuple[int, int], shuffle: bool = True):
+    def __init__(self, image_dir: str, label_dir: str, max_labels: int, model_in_sz: Tuple[int, int], shuffle: bool = True):
         image_paths = glob.glob(osp.join(image_dir, "*"))
         label_paths = glob.glob(osp.join(label_dir, "*"))
         image_paths = sorted(
@@ -45,7 +45,7 @@ class YOLODataset(Dataset):
                     f"Matching image {img} or label {lab} not found")
         self.image_paths = image_paths
         self.label_paths = label_paths
-        self.imgsize = imgsize
+        self.model_in_sz = model_in_sz
         self.shuffle = shuffle
         self.max_n_labels = max_labels
 
@@ -76,25 +76,24 @@ class YOLODataset(Dataset):
         """
         Pad image and adjust label
         """
-        w, h = img.size
-        if w == h:
+        img_w, img_h = img.size
+        if img_w == img_h:
             padded_img = img
         else:
-            dim_to_pad = 1 if w < h else 2
+            dim_to_pad = 1 if img_w < img_h else 2
             if dim_to_pad == 1:
-                padding = (h - w) / 2
-                padded_img = Image.new('RGB', (h, h), color=(127, 127, 127))
+                padding = (img_h - img_w) / 2
+                padded_img = Image.new('RGB', (img_h, img_h), color=(127, 127, 127))
                 padded_img.paste(img, (int(padding), 0))
-                lab[:, [1]] = (lab[:, [1]] * w + padding) / h
-                lab[:, [3]] = (lab[:, [3]] * w / h)
+                lab[:, [1]] = (lab[:, [1]] * img_w + padding) / img_h
+                lab[:, [3]] = (lab[:, [3]] * img_w / img_h)
             else:
-                padding = (w - h) / 2
-                padded_img = Image.new('RGB', (w, w), color=(127, 127, 127))
+                padding = (img_w - img_h) / 2
+                padded_img = Image.new('RGB', (img_w, img_w), color=(127, 127, 127))
                 padded_img.paste(img, (0, int(padding)))
-                lab[:, [2]] = (lab[:, [2]] * h + padding) / w
-                lab[:, [4]] = (lab[:, [4]] * h / w)
-        resize = transforms.Resize(self.imgsize)
-        padded_img = resize(padded_img)  # choose here
+                lab[:, [2]] = (lab[:, [2]] * img_h + padding) / img_w
+                lab[:, [4]] = (lab[:, [4]] * img_h / img_w)
+        padded_img = transforms.Resize(self.model_in_sz)(padded_img)
 
         return padded_img, lab
 

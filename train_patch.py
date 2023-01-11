@@ -177,12 +177,12 @@ class PatchTrainer:
                     p_img_batch = self.patch_applier(
                         img_batch, adv_batch_t)
                     p_img_batch = F.interpolate(
-                        p_img_batch, (self.cfg.model_in_sz[1], self.cfg.model_in_sz[0]))
+                        p_img_batch, (self.cfg.model_in_sz[0], self.cfg.model_in_sz[1]))
 
                     if self.cfg.debug_mode:
                         img = p_img_batch[1, :, :, ]
                         img = transforms.ToPILImage()(img.detach().cpu())
-                        img.save(osp.join(self.cfg.log_dir, "patch_applied_imgs", f"e{epoch}.jpg"))
+                        img.save(osp.join(self.cfg.log_dir, "patch_applied_imgs", f"b_{i_batch}.jpg"))
 
                     output = self.model(p_img_batch)[0]
                     max_prob = self.prob_extractor(output)
