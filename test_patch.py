@@ -94,11 +94,8 @@ class PatchTester:
         #######################################
         # Loop over clean images
         for i, imgfile in enumerate(img_paths):
-            ti0 = time.time()
             img_name = osp.splitext(imgfile)[0].split('/')[-1]
             if (i % 50) == 0:
-                print(i, "/", len(img_paths), imgfile)
-            if verbose:
                 print(i, "/", len(img_paths), imgfile)
             txtname = img_name + '.txt'
             txtpath = osp.join(txtdir, txtname)
@@ -147,9 +144,6 @@ class PatchTester:
                                                    height.item()],
                                           'score': box[4].item(),
                                           'category_id': cls_id_box.item()})
-            ti1 = time.time()
-            if verbose:
-                print(f" Time to compute clean results = {ti1 - ti0} seconds")
 
             #######################################
             # Apply patch
@@ -227,11 +221,6 @@ class PatchTester:
                     patch_results.append({'image_id': imgfile, 'bbox': [x_center.item() - width.item() / 2, y_center.item(
                     ) - height.item() / 2, width.item(), height.item()], 'score': box[4].item(), 'category_id': cls_id_box.item()})
 
-            ti2 = time.time()
-            if verbose:
-                print(
-                    f" Time to compute proper patched results = {ti2 - ti1} seconds")
-
             # create a random patch, transform it and add it to image
             random_patch = torch.rand(adv_patch_cpu.size()).to(self.dev)
             adv_batch_t = self.patch_transformer(
@@ -262,11 +251,6 @@ class PatchTester:
                         f'{cls_id_box} {x_center} {y_center} {width} {height}\n')
                     noise_results.append({'image_id': imgfile, 'bbox': [x_center.item() - width.item() / 2, y_center.item(
                     ) - height.item() / 2, width.item(), height.item()], 'score': box[4].item(), 'category_id': cls_id_box.item()})
-
-            ti3 = time.time()
-            if verbose:
-                print(f" Time to compute random results = {ti3 - ti2} seconds")
-                print(f" Total time to compute results = {ti3 - ti0} seconds")
 
         # save results
         with open(osp.join(jsondir, 'clean_results.json'), 'w', encoding="utf-8") as f_json:

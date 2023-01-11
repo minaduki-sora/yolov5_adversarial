@@ -8,8 +8,6 @@ import os.path as osp
 import time
 import json
 import logging
-import subprocess
-from typing import Optional
 
 from PIL import Image
 from tqdm import tqdm
@@ -93,6 +91,8 @@ class PatchTrainer:
         patch_dir = osp.join(self.cfg.log_dir, "patches")
         os.makedirs(patch_dir, exist_ok=True)
         log_file = osp.join(self.cfg.log_dir, 'log.txt')
+        if self.cfg.debug_mode:
+            os.makedirs(osp.join(self.cfg.log_dir, "patch_applied_imgs"), exist_ok=True)
         # dump cfg json file
         with open(osp.join(self.cfg.log_dir, "cfg.json"), 'w', encoding='utf-8') as json_f:
             json.dump(self.cfg, json_f, ensure_ascii=False, indent=4)
@@ -192,7 +192,7 @@ class PatchTrainer:
                     tv_loss = tv * self.cfg.tv_mult
                     det_loss = torch.mean(max_prob)
                     loss = det_loss + nps_loss + \
-                        torch.max(tv_loss, torch.tensor(0.1).to(self.dev))
+                        torch.max(tv_loss, torch.tensor(self.cfg.max_tv_los).to(self.dev))
 
                     ep_det_loss += det_loss.detach().cpu().numpy()
                     ep_nps_loss += nps_loss.detach().cpu().numpy()
