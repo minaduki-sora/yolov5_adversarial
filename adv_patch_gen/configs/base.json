@@ -5,7 +5,7 @@
     "tensorboard_port": 8994,
     "weights_file": "runs/train/s_95_coco_e100/weights/best.pt",
     "triplet_printfile": "adv_patch_gen/utils/30_rgb_triplets.csv",
-    "device": "cpu",
+    "device": "cuda:0",
     "patch_name": "base",
     "model_in_sz": [640, 640],
     "patch_src": "gray",
@@ -16,13 +16,15 @@
     "n_epochs": 1000,
     "max_labels": 40,
     "start_lr": 0.03,
+    "max_tv_loss": 0.1,
     "tv_mult": 2.5,
     "nps_mult": 0.01,
     "batch_size": 8,
     "debug_mode": false,
     "loss_target": "obj * cls",
-    "_patch_name": "gray, random, or path_to_init_patch",
-    "_patch_size": "must be (width, height)",
-    "_device": "cpu or cuda or cuda:0,1,2,3",
-    "_loss_target": "obj, cls, obj * cls"
+    "_model_in_sz": "# model input height, width",
+    "_patch_name": "# gray, random, or path_to_init_patch",
+    "_patch_size": "# must be (height, width)",
+    "_device": "# cpu or cuda or cuda:0,1,2,3",
+    "_loss_target": "# obj, cls, obj * cls"
 }
