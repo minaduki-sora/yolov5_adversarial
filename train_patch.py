@@ -192,7 +192,7 @@ class PatchTrainer:
                     tv_loss = tv * self.cfg.tv_mult
                     det_loss = torch.mean(max_prob)
                     loss = det_loss + nps_loss + \
-                        torch.max(tv_loss, torch.tensor(self.cfg.max_tv_los).to(self.dev))
+                        torch.max(tv_loss, torch.tensor(self.cfg.max_tv_loss).to(self.dev))
 
                     ep_det_loss += det_loss.detach().cpu().numpy()
                     ep_nps_loss += nps_loss.detach().cpu().numpy()
