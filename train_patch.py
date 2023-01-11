@@ -37,10 +37,11 @@ class PatchTrainer:
 
     def __init__(self, cfg: edict):
         self.cfg = cfg
-        self.dev = cfg.device
+        self.dev = select_device(cfg.device)
 
-        model = DetectMultiBackend(cfg.weights_file, device=select_device(self.dev), dnn=False, data=None, fp16=False)
-        self.model = model.eval().to(self.dev)
+        model = DetectMultiBackend(cfg.weights_file, device=self.dev, dnn=False, data=None, fp16=False)
+        self.model = model.eval()
+
         self.patch_transformer = PatchTransformer(cfg.target_size_frac, self.dev).to(self.dev)
         self.patch_applier = PatchApplier(cfg.patch_alpha).to(self.dev)
         self.prob_extractor = MaxProbExtractor(cfg).to(self.dev)
