@@ -124,6 +124,7 @@ def run(
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
+        anno_json=None,
 ):
     # Initialize/load model and set device
     training = model is not None
@@ -302,7 +303,7 @@ def run(
     # Save JSON
     if save_json and len(jdict):
         w = Path(weights[0] if isinstance(weights, list) else weights).stem if weights is not None else ''  # weights
-        anno_json = str(Path('../datasets/coco/annotations/instances_val2017.json'))  # annotations
+        # anno_json = "../data/VisDrone2019-DET-test-dev/visdrone2019-det-test-dev.json"
         pred_json = str(save_dir / f"{w}_predictions.json")  # predictions
         LOGGER.info(f'\nEvaluating pycocotools mAP... saving {pred_json}...')
         with open(pred_json, 'w') as f:
@@ -322,6 +323,18 @@ def run(
             eval.accumulate()
             eval.summarize()
             map, map50 = eval.stats[:2]  # update results (mAP@0.5:0.95, mAP@0.5)
+
+            # capture eval stats and save to file
+            import io
+            from contextlib import redirect_stdout
+
+            std_out = io.StringIO()
+            with redirect_stdout(std_out):
+                eval.summarize()
+            eval_stats = std_out.getvalue()
+            map_save_path = save_dir / "map_stats.txt"
+            with open(map_save_path, 'w', encoding="utf-8") as fwriter:
+                fwriter.write(eval_stats)
         except Exception as e:
             LOGGER.info(f'pycocotools unable to run: {e}')
 
@@ -360,6 +373,8 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
+    parser.add_argument('--anno_json', default="../data/VisDrone2019-DET-test-dev/visdrone2019-det-test-dev.json", 
+                        help='path to ref ground truth json annot file')
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')
