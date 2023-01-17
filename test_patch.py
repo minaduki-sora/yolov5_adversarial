@@ -3,20 +3,26 @@ Testing code for evaluating Adversarial patches against object detection
 
 python test_patch.py --cfg config_json_file
 """
+import io
 import os
 import os.path as osp
 import time
 import json
 import glob
+from pathlib import Path
+from contextlib import redirect_stdout
 
+import tqdm
 import numpy as np
 from PIL import Image
 from easydict import EasyDict as edict
 import torch
 from torchvision import transforms
+from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
 
 from models.common import DetectMultiBackend
-from utils.general import non_max_suppression, xyxy2xywh
+from utils.general import non_max_suppression, xyxy2xywh, scale_boxes
 from utils.torch_utils import select_device
 
 from adv_patch_gen.utils.config_parser import get_argparser, load_config_object
@@ -24,6 +30,42 @@ from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
 
 
 IMG_EXTNS = {".png", ".jpg", ".jpeg"}
+
+
+def create_image_annotation(
+    file_path: Path, width: int, height: int, image_id: int
+):
+    file_path = file_path.name
+    image_annotation = {
+        "file_name": file_path,
+        "height": height,
+        "width": width,
+        "id": image_id,
+    }
+    return image_annotation
+
+
+def eval_coco_metrics(anno_json: str, pred_json: str, txt_save_path: str) -> np.ndarray:
+    """
+    Compare and eval pred json producing coco metrics
+    """
+
+    anno = COCO(anno_json)  # init annotations api
+    pred = anno.loadRes(pred_json)  # init predictions api
+    eval = COCOeval(anno, pred, 'bbox')
+
+    eval.evaluate()
+    eval.accumulate()
+    eval.summarize()
+
+    # capture eval stats and save to file
+    std_out = io.StringIO()
+    with redirect_stdout(std_out):
+        eval.summarize()
+    eval_stats = std_out.getvalue()
+    with open(txt_save_path, 'w', encoding="utf-8") as fwriter:
+        fwriter.write(eval_stats)
+    return eval.stats
 
 
 class PatchTester:
@@ -38,45 +80,65 @@ class PatchTester:
         model = DetectMultiBackend(cfg.weights_file, device=select_device(
             self.dev), dnn=False, data=None, fp16=False)
         self.model = model.eval().to(self.dev)
-        self.patch_transformer = PatchTransformer(cfg.target_size_frac, self.dev).to(self.dev)
+        self.patch_transformer = PatchTransformer(
+            cfg.target_size_frac, self.dev).to(self.dev)
         self.patch_applier = PatchApplier(cfg.patch_alpha).to(self.dev)
 
     def test(self,
              conf_thresh=0.4,
              nms_thresh=0.4,
-             save_images=True,
-             save_padded_image=True,
+             save_image=False,
+             save_orig_padded_image=True,
+             class_agnostic=False,
              cls_id=None,
-             max_images=100000,
-             verbose=True) -> None:
+             max_images=100000) -> None:
         """
-        Run the test function
+        Initiate test for properly, randomly and no-patched images
+        Args:
+            conf_thresh: confidence thres for successful detection/positives
+            nms_thresh: nms thres
+            save_image: save properly and randomly patched images
+            save_orig_padded_image: save orig padded images
+            class_agnostic: all classes are teated the same. Use when only evaluating for obj det & not classification
+            cls_id: filtering for a specific class for evaluation only
+            max_images: max number of images to evaluate from inside imgdir
         """
         t0 = time.time()
 
-        model_in_sz = self.cfg.model_in_sz[::-1]  # (w, h) to (h, w)
-        mh, mw = model_in_sz
-        patch_size = self.cfg.patch_size[::-1]  # (w, h) to (h, w)
+        patch_size = self.cfg.patch_size
+        model_in_sz = self.cfg.model_in_sz
+        m_h, m_w = model_in_sz
 
         patch_img = Image.open(self.cfg.patchfile).convert('RGB')
         patch_img = transforms.Resize(patch_size)(patch_img)
         adv_patch_cpu = transforms.ToTensor()(patch_img)
         adv_patch = adv_patch_cpu.to(self.dev)
 
+        clean_gt_results = []
         clean_results = []
         noise_results = []
         patch_results = []
 
         # make dirs
-        cleandir = osp.join(self.cfg.savedir, 'clean/', 'images/')
-        txtdir = osp.join(self.cfg.savedir, 'clean/', 'labels/')
-        properdir = osp.join(self.cfg.savedir, 'proper_patched/', 'images/')
-        txtdir2 = osp.join(self.cfg.savedir, 'proper_patched/', 'labels/')
-        randomdir = osp.join(self.cfg.savedir, 'random_patched/', 'images/')
-        txtdir3 = osp.join(self.cfg.savedir, 'random_patched/', 'labels/')
+        clean_img_dir = osp.join(self.cfg.savedir, 'clean/', 'images/')
+        clean_txt_dir = osp.join(self.cfg.savedir, 'clean/', 'labels/')
+        proper_img_dir = osp.join(
+            self.cfg.savedir, 'proper_patched/', 'images/')
+        proper_txt_dir = osp.join(
+            self.cfg.savedir, 'proper_patched/', 'labels/')
+        random_img_dir = osp.join(
+            self.cfg.savedir, 'random_patched/', 'images/')
+        random_txt_dir = osp.join(
+            self.cfg.savedir, 'random_patched/', 'labels/')
         jsondir = osp.join(self.cfg.savedir, 'jsons')
-        for directory in (cleandir, txtdir, properdir, txtdir2, randomdir, txtdir3, jsondir):
-            print(f"Creating output dir: {directory}")
+        print(f"Saving all outputs to {self.cfg.savedir}")
+        dirs_to_create = [clean_txt_dir,
+                          proper_txt_dir, random_txt_dir, jsondir]
+        if save_image:
+            dirs_to_create.extend([proper_img_dir, random_img_dir])
+        if save_image and save_orig_padded_image:
+            dirs_to_create.append(clean_img_dir)
+        for directory in dirs_to_create:
             os.makedirs(directory, exist_ok=True)
 
         # dump cfg json file
@@ -91,17 +153,27 @@ class PatchTester:
         img_paths = img_paths[:max_images]
         print("Considered num images:", len(img_paths))
 
+        clean_image_annotations = []
+
         #######################################
-        # Loop over clean images
-        for i, imgfile in enumerate(img_paths):
+        # main loop over images
+        i = 0
+        for imgfile in tqdm.tqdm(img_paths):
             img_name = osp.splitext(imgfile)[0].split('/')[-1]
-            if (i % 50) == 0:
-                print(i, "/", len(img_paths), imgfile)
+            imgfile_path = Path(imgfile)
+            image_id = int(imgfile_path.stem) if imgfile_path.stem.isnumeric(
+            ) else imgfile_path.stem
+
+            clean_image_annotation = create_image_annotation(
+                imgfile_path, width=m_w, height=m_h, image_id=image_id)
+            clean_image_annotations.append(clean_image_annotation)
+
             txtname = img_name + '.txt'
-            txtpath = osp.join(txtdir, txtname)
+            txtpath = osp.join(clean_txt_dir, txtname)
             # open image and adjust to yolo input size
             img = Image.open(imgfile).convert('RGB')
             w, h = img.size
+
             if w == h:
                 padded_img = img
             else:
@@ -120,8 +192,8 @@ class PatchTester:
             padded_img = transforms.Resize(model_in_sz)(padded_img)
             cleanname = img_name + ".png"
             # save img
-            if save_images and save_padded_image:
-                padded_img.save(osp.join(cleandir, cleanname))
+            if save_image and save_orig_padded_image:
+                padded_img.save(osp.join(clean_img_dir, cleanname))
 
             # generate a label file for the pathed image
             padded_img_tensor = transforms.ToTensor()(
@@ -134,16 +206,26 @@ class PatchTester:
                 for box in boxes:
                     cls_id_box = box[-1]
                     x_center, y_center, width, height = box[:4]
-                    x_center, y_center, width, height = x_center/mw, y_center/mh, width/mw, height/mh
                     textfile.write(
-                        f'{cls_id_box} {x_center} {y_center} {width} {height}\n')
-                    clean_results.append({'image_id': imgfile,
+                        f'{cls_id_box} {x_center/m_w} {y_center/m_h} {width/m_w} {height/m_h}\n')
+                    clean_results.append({'image_id': image_id,
                                           'bbox': [x_center.item() - width.item() / 2,
                                                    y_center.item() - height.item() / 2,
                                                    width.item(),
                                                    height.item()],
                                           'score': box[4].item(),
-                                          'category_id': cls_id_box.item()})
+                                          'category_id': 0 if class_agnostic else int(cls_id_box.item()) })
+                    clean_gt_results.append({'id': i,
+                                             "iscrowd": 0,
+                                             'image_id': image_id,
+                                             'bbox': [x_center.item() - width.item() / 2,
+                                                      y_center.item() - height.item() / 2,
+                                                      width.item(),
+                                                      height.item()],
+                                             'area': width.item() * height.item(),
+                                             'category_id': 0 if class_agnostic else int(cls_id_box.item()),
+                                             "segmentation": []})
+                    i += 1
 
             #######################################
             # Apply patch
@@ -160,9 +242,6 @@ class PatchTester:
             padded_img2 = transforms.ToTensor()(padded_img).to(self.dev)
             img_fake_batch = padded_img2.unsqueeze(0)
             lab_fake_batch = label.unsqueeze(0).to(self.dev)
-            if verbose:
-                print(" img_fake_batch.shape", img_fake_batch.shape)
-                print(" lab_fake_batch.shape", lab_fake_batch.shape)
 
             # Optional, Filter label_batch array to only include desired cls_id
             use_clean_boxes = False
@@ -197,13 +276,13 @@ class PatchTester:
                 p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
             else:
                 p_img_pil = padded_img
-            properpatchedname = img_name + "_p.png"
-            if save_images:
-                p_img_pil.save(osp.join(properdir, properpatchedname))
+            properpatchedname = img_name + ".png"
+            if save_image:
+                p_img_pil.save(osp.join(proper_img_dir, properpatchedname))
 
             # generate a label file for the image with sticker
             txtname = properpatchedname.replace('.png', '.txt')
-            txtpath = osp.join(txtdir2, txtname)
+            txtpath = osp.join(proper_txt_dir, txtname)
 
             padded_img_tensor = transforms.ToTensor()(
                 p_img_pil).unsqueeze(0).to(self.cfg.device)
@@ -215,11 +294,15 @@ class PatchTester:
                 for box in boxes:
                     cls_id_box = box[-1]
                     x_center, y_center, width, height = box[:4]
-                    x_center, y_center, width, height = x_center/mw, y_center/mh, width/mw, height/mh
                     textfile.write(
-                        f'{cls_id_box} {x_center} {y_center} {width} {height}\n')
-                    patch_results.append({'image_id': imgfile, 'bbox': [x_center.item() - width.item() / 2, y_center.item(
-                    ) - height.item() / 2, width.item(), height.item()], 'score': box[4].item(), 'category_id': cls_id_box.item()})
+                        f'{cls_id_box} {x_center/m_w} {y_center/m_h} {width/m_w} {height/m_h}\n')
+                    patch_results.append({'image_id': image_id,
+                                          'bbox': [x_center.item() - width.item() / 2,
+                                                   y_center.item() - height.item() / 2,
+                                                   width.item(),
+                                                   height.item()],
+                                          'score': box[4].item(),
+                                          'category_id': 0 if class_agnostic else int(cls_id_box.item())})
 
             # create a random patch, transform it and add it to image
             random_patch = torch.rand(adv_patch_cpu.size()).to(self.dev)
@@ -228,13 +311,13 @@ class PatchTester:
             p_img_batch = self.patch_applier(img_fake_batch, adv_batch_t)
             p_img = p_img_batch.squeeze(0)
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
-            properpatchedname = img_name + "_rdp.png"
-            if save_images:
-                p_img_pil.save(osp.join(randomdir, properpatchedname))
+            properpatchedname = img_name + ".png"
+            if save_image:
+                p_img_pil.save(osp.join(random_img_dir, properpatchedname))
 
             # generate a label file for the image with random patch
             txtname = properpatchedname.replace('.png', '.txt')
-            txtpath = osp.join(txtdir3, txtname)
+            txtpath = osp.join(random_txt_dir, txtname)
 
             padded_img_tensor = transforms.ToTensor()(
                 p_img_pil).unsqueeze(0).to(self.cfg.device)
@@ -246,19 +329,52 @@ class PatchTester:
                 for box in boxes:
                     cls_id_box = box[-1]
                     x_center, y_center, width, height = box[:4]
-                    x_center, y_center, width, height = x_center/mw, y_center/mh, width/mw, height/mh
                     textfile.write(
-                        f'{cls_id_box} {x_center} {y_center} {width} {height}\n')
-                    noise_results.append({'image_id': imgfile, 'bbox': [x_center.item() - width.item() / 2, y_center.item(
-                    ) - height.item() / 2, width.item(), height.item()], 'score': box[4].item(), 'category_id': cls_id_box.item()})
+                        f'{cls_id_box} {x_center/m_w} {y_center/m_h} {width/m_w} {height/m_h}\n')
+                    noise_results.append({'image_id': image_id,
+                                          'bbox': [x_center.item() - width.item() / 2,
+                                                   y_center.item() - height.item() / 2,
+                                                   width.item(),
+                                                   height.item()],
+                                          'score': box[4].item(),
+                                          'category_id': 0 if class_agnostic else int(cls_id_box.item())})
 
-        # save results
-        with open(osp.join(jsondir, 'clean_results.json'), 'w', encoding="utf-8") as f_json:
+
+        # add all required fields for a reference GT clean annotation
+        clean_gt_results_json = {"annotations": clean_gt_results,
+                                 "categories": [],
+                                 "images": clean_image_annotations}
+        class_list = ["car", "van", "truck", "bus"]
+        for index, label in enumerate(class_list, start=0):
+            categories = {"supercategory": "Defect",
+                          "id": index,
+                          "name": label}
+            clean_gt_results_json["categories"].append(categories)
+
+        # save all json results
+        clean_gt_json = osp.join(jsondir, 'clean_gt_results.json')
+        clean_json = osp.join(jsondir, 'clean_results.json')
+        noise_json = osp.join(jsondir, 'noise_results.json')
+        patch_json = osp.join(jsondir, 'patch_results.json')
+
+        with open(clean_gt_json, 'w', encoding="utf-8") as f_json:
+            json.dump(clean_gt_results_json, f_json, ensure_ascii=False, indent=4)
+        with open(clean_json, 'w', encoding="utf-8") as f_json:
             json.dump(clean_results, f_json, ensure_ascii=False, indent=4)
-        with open(osp.join(jsondir, 'noise_results.json'), 'w', encoding="utf-8") as f_json:
+        with open(noise_json, 'w', encoding="utf-8") as f_json:
             json.dump(noise_results, f_json, ensure_ascii=False, indent=4)
-        with open(osp.join(jsondir, 'patch_results.json'), 'w', encoding="utf-8") as f_json:
+        with open(patch_json, 'w', encoding="utf-8") as f_json:
             json.dump(patch_results, f_json, ensure_ascii=False, indent=4)
+
+        print("####### Metrics for Images with correct patches #######")
+        eval_coco_metrics(clean_gt_json, patch_json, osp.join(
+            self.cfg.savedir, 'patch_map_stats.txt'))
+        print("####### Metrics for Images with random noise patches #######")
+        eval_coco_metrics(clean_gt_json, noise_json, osp.join(
+            self.cfg.savedir, 'noise_map_stats.txt'))
+        print("####### Metrics for Images with no patches for baseline tesing. Should be close to 1s #######")
+        eval_coco_metrics(clean_gt_json, clean_json, osp.join(
+            self.cfg.savedir, 'clean_map_stats.txt'))
 
         tf = time.time()
         print(f" Time to compute proper patched results = {tf - t0} seconds")
@@ -275,6 +391,12 @@ def main():
     parser.add_argument('--sd', '--savedir', type=str,
                         dest="savedir", default=f'test/{time.strftime("%Y%m%d-%H%M%S")}', required=True,
                         help='Path to save dir for saving testing results (default: %(default)s)')
+    parser.add_argument('--save-img',
+                        dest="saveimg", action='store_true',
+                        help='Save images with patches for later inspection')
+    parser.add_argument('--class-agnostic',
+                        dest="class_agnostic", action='store_true',
+                        help='All classes are teated the same. Use when only evaluating for obj det & not classification')
 
     args = parser.parse_args()
     cfg = load_config_object(args.config)
@@ -283,7 +405,7 @@ def main():
     cfg.savedir = args.savedir
 
     tester = PatchTester(cfg)
-    tester.test()
+    tester.test(save_image=args.saveimg, class_agnostic=args.class_agnostic)
 
 
 if __name__ == '__main__':
