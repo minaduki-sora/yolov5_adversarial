@@ -1,6 +1,6 @@
 {
-    "image_dir": "../data/VisDrone2019-DET-test-dev/images",
-    "label_dir": "../data/VisDrone2019-DET-test-dev/labels",
+    "image_dir": "data/visdrone_data/VisDrone2019-DET-train/images",
+    "label_dir": "data/visdrone_data/VisDrone2019-DET-train/labels",
     "log_dir": "runs/train_adversarial",
     "tensorboard_port": 8994,
     "weights_file": "runs/train/s_95_coco_e100/weights/best.pt",
