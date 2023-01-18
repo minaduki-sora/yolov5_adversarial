@@ -389,8 +389,8 @@ def main():
                         dest="imgdir", default=None, required=True,
                         help='Path to img dir for testing (default: %(default)s)')
     parser.add_argument('--sd', '--savedir', type=str,
-                        dest="savedir", default=f'test/{time.strftime("%Y%m%d-%H%M%S")}', required=True,
-                        help='Path to save dir for saving testing results (default: %(default)s)')
+                        dest="savedir", default='runs/test_adversarial',
+                        help='Path to save dir for saving testing results (default: %(default)s)')      
     parser.add_argument('--save-img',
                         dest="saveimg", action='store_true',
                         help='Save images with patches for later inspection')
@@ -402,7 +402,7 @@ def main():
     cfg = load_config_object(args.config)
     cfg.patchfile = args.patchfile
     cfg.imgdir = args.imgdir
-    cfg.savedir = args.savedir
+    cfg.savedir = osp.join(args.savedir, f'{cfg.patch_name}_{time.strftime("%Y%m%d-%H%M%S")}')
 
     tester = PatchTester(cfg)
     tester.test(save_image=args.saveimg, class_agnostic=args.class_agnostic)
