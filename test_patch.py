@@ -23,7 +23,8 @@ from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
 from models.common import DetectMultiBackend
-from utils.general import non_max_suppression, xyxy2xywh, scale_boxes
+from utils.metrics import ConfusionMatrix
+from utils.general import non_max_suppression, xyxy2xywh
 from utils.torch_utils import select_device
 
 from adv_patch_gen.utils.config_parser import get_argparser, load_config_object
@@ -31,6 +32,7 @@ from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
 
 
 IMG_EXTNS = {".png", ".jpg", ".jpeg"}
+CLASS_LIST = ["car", "van", "truck", "bus"]
 
 
 def create_image_annotation(
@@ -126,6 +128,7 @@ class PatchTester:
         # make dirs
         clean_img_dir = osp.join(self.cfg.savedir, 'clean/', 'images/')
         clean_txt_dir = osp.join(self.cfg.savedir, 'clean/', 'labels/')
+
         proper_img_dir = osp.join(
             self.cfg.savedir, 'proper_patched/', 'images/')
         proper_txt_dir = osp.join(
@@ -159,6 +162,10 @@ class PatchTester:
         print("Considered num images:", len(img_paths))
 
         clean_image_annotations = []
+        # to calc confusion matrixes later
+        all_labels = []
+        all_patch_preds = []
+        all_noise_preds = []
 
         #######################################
         # main loop over images
@@ -204,7 +211,9 @@ class PatchTester:
             padded_img_tensor = transforms.ToTensor()(padded_img).unsqueeze(0).to(self.dev)
             pred = self.model(padded_img_tensor)
             boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
+            all_labels.append(boxes.clone())
             boxes = xyxy2xywh(boxes)
+
             labels = []
             if save_txt:
                 textfile = open(txtpath, "w+", encoding="utf-8")
@@ -291,6 +300,7 @@ class PatchTester:
             padded_img_tensor = transforms.ToTensor()(p_img_pil).unsqueeze(0).to(self.dev)
             pred = self.model(padded_img_tensor)
             boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
+            all_patch_preds.append(boxes.clone())
             boxes = xyxy2xywh(boxes)
 
             if save_txt:
@@ -329,6 +339,7 @@ class PatchTester:
             padded_img_tensor = transforms.ToTensor()(p_img_pil).unsqueeze(0).to(self.dev)
             pred = self.model(padded_img_tensor)
             boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
+            all_noise_preds.append(boxes.clone())
             boxes = xyxy2xywh(boxes)
 
             if save_txt:
@@ -349,12 +360,29 @@ class PatchTester:
             if save_txt:
                 textfile.close()
 
+        # Calc confusion matrices if not class_agnostic
+        if not class_agnostic:
+            # reorder labels to (Array[M, 5]), class, x1, y1, x2, y2
+            all_labels = torch.cat(all_labels)[:, [5, 0, 1, 2, 3]]
+            # patch and noise labels are of shapes (Array[N, 6]), x1, y1, x2, y2, conf, class
+            all_patch_preds = torch.cat(all_patch_preds)
+            all_noise_preds = torch.cat(all_noise_preds)
+
+            patch_confusion_matrix = ConfusionMatrix(len(CLASS_LIST))
+            patch_confusion_matrix.process_batch(all_patch_preds, all_labels)
+            noise_confusion_matrix = ConfusionMatrix(len(CLASS_LIST))
+            noise_confusion_matrix.process_batch(all_noise_preds, all_labels)
+
+            patch_confusion_matrix.plot(
+                save_dir=self.cfg.savedir, names=CLASS_LIST, save_name="confusion_matrix_patch.png")
+            noise_confusion_matrix.plot(
+                save_dir=self.cfg.savedir, names=CLASS_LIST, save_name="confusion_matrix_noise.png")
+
         # add all required fields for a reference GT clean annotation
         clean_gt_results_json = {"annotations": clean_gt_results,
                                  "categories": [],
                                  "images": clean_image_annotations}
-        class_list = ["car", "van", "truck", "bus"]
-        for index, label in enumerate(class_list, start=0):
+        for index, label in enumerate(CLASS_LIST, start=0):
             categories = {"supercategory": "Defect",
                           "id": index,
                           "name": label}
