@@ -184,7 +184,7 @@ class ConfusionMatrix:
         return tp[:-1], fp[:-1]  # remove background class
 
     @TryExcept('WARNING ⚠️ ConfusionMatrix plot failure')
-    def plot(self, normalize=True, save_dir='', names=()):
+    def plot(self, normalize=True, save_dir='', names=(), save_name='confusion_matrix.png'):
         import seaborn as sn
 
         array = self.matrix / ((self.matrix.sum(0).reshape(1, -1) + 1E-9) if normalize else 1)  # normalize columns
@@ -211,7 +211,7 @@ class ConfusionMatrix:
         ax.set_xlabel('True')
         ax.set_ylabel('Predicted')
         ax.set_title('Confusion Matrix')
-        fig.savefig(Path(save_dir) / 'confusion_matrix.png', dpi=250)
+        fig.savefig(Path(save_dir) / save_name, dpi=250)
         plt.close(fig)
 
     def print(self):
