@@ -30,9 +30,9 @@ class PatchTransformer(nn.Module):
         self.noise_factor = 0.10
         self.minangle = -20 / 180 * math.pi
         self.maxangle = 20 / 180 * math.pi
-        self.medianpooler = MedianPool2d(7, same=True)
+        self.medianpooler = MedianPool2d(kernel_size=7, same=True)
 
-    def forward(self, adv_patch, lab_batch, model_in_sz, do_rotate=True, rand_loc=True):
+    def forward(self, adv_patch, lab_batch, model_in_sz, do_transforms=True, do_rotate=True, rand_loc=True):
         adv_patch = self.medianpooler(adv_patch.unsqueeze(0))
         m_h, m_w = model_in_sz
         # Determine size of padding
@@ -40,43 +40,43 @@ class PatchTransformer(nn.Module):
         # Make a batch of patches
         adv_patch = adv_patch.unsqueeze(0)
         adv_batch = adv_patch.expand(
-            lab_batch.size(0), lab_batch.size(1), -1, -1, -1)
+            lab_batch.size(0), lab_batch.size(1), -1, -1, -1)  # [bsize, max_labels, pchannel, pheight, pwidth]
         batch_size = torch.Size((lab_batch.size(0), lab_batch.size(1)))
 
         # Contrast, brightness and noise transforms
+        if do_transforms:
+            # Create random contrast tensor
+            contrast = torch.FloatTensor(batch_size).uniform_(
+                self.min_contrast, self.max_contrast).to(self.dev)
+            contrast = contrast.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+            contrast = contrast.expand(-1, -1, adv_batch.size(-3),
+                                    adv_batch.size(-2), adv_batch.size(-1))
+            contrast = contrast.to(self.dev)
 
-        # Create random contrast tensor
-        contrast = torch.FloatTensor(batch_size).uniform_(
-            self.min_contrast, self.max_contrast).to(self.dev)
-        contrast = contrast.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-        contrast = contrast.expand(-1, -1, adv_batch.size(-3),
-                                   adv_batch.size(-2), adv_batch.size(-1))
-        contrast = contrast.to(self.dev)
+            # Create random brightness tensor
+            brightness = torch.FloatTensor(batch_size).uniform_(
+                self.min_brightness, self.max_brightness).to(self.dev)
+            brightness = brightness.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+            brightness = brightness.expand(-1, -1, adv_batch.size(-3),
+                                        adv_batch.size(-2), adv_batch.size(-1))
+            brightness = brightness.to(self.dev)
 
-        # Create random brightness tensor
-        brightness = torch.FloatTensor(batch_size).uniform_(
-            self.min_brightness, self.max_brightness).to(self.dev)
-        brightness = brightness.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-        brightness = brightness.expand(-1, -1, adv_batch.size(-3),
-                                       adv_batch.size(-2), adv_batch.size(-1))
-        brightness = brightness.to(self.dev)
+            # Create random noise tensor
+            noise = torch.FloatTensor(
+                adv_batch.size()).uniform_(-1, 1).to(self.dev) * self.noise_factor
 
-        # Create random noise tensor
-        noise = torch.FloatTensor(
-            adv_batch.size()).uniform_(-1, 1).to(self.dev) * self.noise_factor
+            # Apply contrast/brightness/noise, clamp
+            adv_batch = adv_batch * contrast + brightness + noise
 
-        # Apply contrast/brightness/noise, clamp
-        adv_batch = adv_batch * contrast + brightness + noise
-
-        adv_batch = torch.clamp(adv_batch, 0.000001, 0.99999)
+            adv_batch = torch.clamp(adv_batch, 0.000001, 0.99999)
 
         # Where the label class_id is 1 we don't want a patch (padding) --> fill mask with zero's
-        cls_ids = torch.narrow(lab_batch, 2, 0, 1)
+        cls_ids = lab_batch[..., 0].unsqueeze(-1)  # equiv to torch.narrow(lab_batch, 2, 0, 1)
         cls_mask = cls_ids.expand(-1, -1, 3)
         cls_mask = cls_mask.unsqueeze(-1)
         cls_mask = cls_mask.expand(-1, -1, -1, adv_batch.size(3))
         cls_mask = cls_mask.unsqueeze(-1)
-        cls_mask = cls_mask.expand(-1, -1, -1, -1, adv_batch.size(4))
+        cls_mask = cls_mask.expand(-1, -1, -1, -1, adv_batch.size(4))  # [bsize, max_preds, pchannel, pheight, pwidth]
         msk_batch = torch.FloatTensor(cls_mask.size()).fill_(1).to(self.dev) - cls_mask
 
         # Pad patch and mask to image dimensions
@@ -125,7 +125,8 @@ class PatchTransformer(nn.Module):
         sin = torch.sin(angle)
         cos = torch.cos(angle)
 
-        # Theta = rotation,rescale matrix
+        # Theta = rotation/rescale matrix
+        # Theta = input batch of affine matrices with shape (N×2×3) for 2D or (N×3×4) for 3D
         theta = torch.FloatTensor(anglesize, 2, 3).fill_(0).to(self.dev)
         theta[:, 0, 0] = cos/scale
         theta[:, 0, 1] = sin/scale
