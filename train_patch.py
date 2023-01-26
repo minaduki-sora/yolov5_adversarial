@@ -8,6 +8,7 @@ import os.path as osp
 import time
 import json
 import logging
+from contextlib import nullcontext
 
 from PIL import Image
 from tqdm import tqdm
@@ -16,6 +17,7 @@ from easydict import EasyDict as edict
 import torch
 import torch.nn.functional as F
 from torch import optim, autograd
+from torch.cuda.amp import autocast
 from torchvision import transforms
 
 from tensorboardX import SummaryWriter
@@ -28,6 +30,8 @@ from adv_patch_gen.utils.config_parser import get_argparser, load_config_object
 from adv_patch_gen.utils.dataset import YOLODataset
 from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
 from adv_patch_gen.utils.loss import MaxProbExtractor, SaliencyLoss, TotalVariationLoss, NPSLoss
+
+torch.backends.cudnn.benchmark = True
 
 
 class PatchTrainer:
@@ -49,7 +53,7 @@ class PatchTrainer:
         self.nps_loss = NPSLoss(cfg.triplet_printfile, cfg.patch_size).to(self.dev)
         self.tv_loss = TotalVariationLoss().to(self.dev)
 
-        # freeze entire model
+        # freeze entire detection model
         for param in self.model.parameters():
             param.requires_grad = False
 
@@ -66,7 +70,8 @@ class PatchTrainer:
                         shuffle=True),
             batch_size=self.cfg.batch_size,
             shuffle=True,
-            num_workers=10)
+            num_workers=10,
+            pin_memory=True if self.dev.type == "cuda" else False)
         self.epoch_length = len(self.train_loader)
 
     def init_tensorboard(self, log_dir: str = None, port: int = 6006, run_tb=True):
@@ -162,11 +167,12 @@ class PatchTrainer:
             ep_nps_loss = 0
             ep_tv_loss = 0
             ep_loss = 0
+            min_tv_loss = torch.tensor(self.cfg.min_tv_loss).to(self.dev)
 
             for i_batch, (img_batch, lab_batch) in tqdm(enumerate(self.train_loader),
                                                         desc=f'Running epoch {epoch}',
                                                         total=self.epoch_length):
-                with autograd.detect_anomaly():
+                with autograd.set_detect_anomaly(mode=True if self.cfg.debug_mode else False):
                     img_batch = img_batch.to(self.dev)
                     lab_batch = lab_batch.to(self.dev)
                     if (i_batch % 100) == 0:
@@ -184,16 +190,17 @@ class PatchTrainer:
                         img = transforms.ToPILImage()(img.detach().cpu())
                         img.save(osp.join(self.cfg.log_dir, "patch_applied_imgs", f"b_{i_batch}.jpg"))
 
-                    output = self.model(p_img_batch)[0]
-                    max_prob = self.prob_extractor(output)
-                    nps = self.nps_loss(adv_patch)
-                    tv = self.tv_loss(adv_patch)
+                    with autocast() if self.cfg.use_amp else nullcontext():
+                        output = self.model(p_img_batch)[0]
+                        max_prob = self.prob_extractor(output)
+                        nps = self.nps_loss(adv_patch) if self.cfg.nps_mult != 0 else torch.tensor([0], device=self.dev)
+                        tv = self.tv_loss(adv_patch) if self.cfg.tv_mult != 0 else torch.tensor([0], device=self.dev)
 
                     nps_loss = nps * self.cfg.nps_mult
-                    tv_loss = tv * self.cfg.tv_mult
+                    tv_loss = torch.max(tv * self.cfg.tv_mult, min_tv_loss)
                     det_loss = torch.mean(max_prob)
-                    loss = det_loss + nps_loss + \
-                        torch.max(tv_loss, torch.tensor(self.cfg.max_tv_loss).to(self.dev))
+
+                    loss = det_loss + nps_loss + tv_loss
 
                     ep_det_loss += det_loss.detach().cpu().numpy()
                     ep_nps_loss += nps_loss.detach().cpu().numpy()
@@ -202,11 +209,11 @@ class PatchTrainer:
 
                     loss.backward()
                     optimizer.step()
-                    optimizer.zero_grad()
+                    optimizer.zero_grad(set_to_none=True)
                     # keep patch in image range
                     adv_patch_cpu.data.clamp_(0, 1)
 
-                    if i_batch % 10 == 0:
+                    if i_batch % 15 == 0:
                         iteration = self.epoch_length * epoch + i_batch
                         self.writer.add_scalar(
                             'total_loss', loss.detach().cpu().numpy(), iteration)
