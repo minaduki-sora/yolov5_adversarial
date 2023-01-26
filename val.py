@@ -303,7 +303,6 @@ def run(
     # Save JSON
     if save_json and len(jdict):
         w = Path(weights[0] if isinstance(weights, list) else weights).stem if weights is not None else ''  # weights
-        # anno_json = "../data/VisDrone2019-DET-test-dev/visdrone2019-det-test-dev.json"
         pred_json = str(save_dir / f"{w}_predictions.json")  # predictions
         LOGGER.info(f'\nEvaluating pycocotools mAP... saving {pred_json}...')
         with open(pred_json, 'w') as f:
@@ -373,7 +372,7 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
-    parser.add_argument('--anno_json', default="../data/VisDrone2019-DET-test-dev/visdrone2019-det-test-dev.json", 
+    parser.add_argument('--anno-json', default="../datasets/coco/annotations/instances_val2017.json",
                         help='path to ref ground truth json annot file')
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
