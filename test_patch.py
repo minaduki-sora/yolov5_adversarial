@@ -328,7 +328,9 @@ class PatchTester:
             else:
                 # transform patch and add it to image
                 adv_batch_t = self.patch_transformer(
-                    adv_patch, lab_fake_batch, model_in_sz, do_rotate=True, rand_loc=False)
+                    adv_patch, lab_fake_batch, model_in_sz,
+                    do_transforms=self.cfg.transform_patches,
+                    do_rotate=self.cfg.rotate_patches, rand_loc=False)
                 p_img_batch = self.patch_applier(img_fake_batch, adv_batch_t)
                 p_img = p_img_batch.squeeze(0)
                 p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
