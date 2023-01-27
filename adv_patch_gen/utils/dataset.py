@@ -58,15 +58,13 @@ class YOLODataset(Dataset):
         lab_path = self.label_paths[idx]
         image = Image.open(img_path).convert('RGB')
         # check to see if label file contains any annotation data
-        if osp.getsize(lab_path):
-            label = np.loadtxt(lab_path)
-        else:
-            label = np.ones([5])
+        label = np.loadtxt(lab_path) if osp.getsize(lab_path) else np.ones([5])
+        if label.ndim == 1:
+            label = np.expand_dims(label, axis=0)
+        # sort in reverse by bbox area
+        label = np.asarray(sorted(label, key=lambda annot: -annot[3]*annot[4]))
 
         label = torch.from_numpy(label).float()
-        if label.dim() == 1:
-            label = label.unsqueeze(0)
-
         image, label = self.pad_and_scale(image, label)
         image = transforms.ToTensor()(image)
         label = self.pad_label(label)
