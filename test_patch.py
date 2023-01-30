@@ -106,37 +106,36 @@ class PatchTester:
         assert (bp_small.shape[0] + bp_med.shape[0] + bp_large.shape[0]) == boxes_pred.shape[0]
         assert (b_small.shape[0] + b_med.shape[0] + b_large.shape[0]) == boxes.shape[0]
 
+        conf_matrix = ConfusionMatrix(len(CLASS_LIST))
+        conf_matrix.process_batch(bp_small, b_small)
+        tps_small, fps_small = conf_matrix.tp_fp()
+        conf_matrix = ConfusionMatrix(len(CLASS_LIST))
+        conf_matrix.process_batch(bp_med, b_med)
+        tps_med, fps_med = conf_matrix.tp_fp()
+        conf_matrix = ConfusionMatrix(len(CLASS_LIST))
+        conf_matrix.process_batch(bp_large, b_large)
+        tps_large, fps_large = conf_matrix.tp_fp()
+        conf_matrix = ConfusionMatrix(len(CLASS_LIST))
+        conf_matrix.process_batch(boxes_pred, boxes)
+        tps_all, fps_all = conf_matrix.tp_fp()
+
         # class agnostic mode (Mis-clsfs are ignored, only non-dets matter)
         if class_agnostic:
-            tp_small = bp_small.shape[0]
-            tp_med = bp_med.shape[0]
-            tp_large = bp_large.shape[0]
-            tp_all = boxes_pred.shape[0]
+            tp_small = tps_small.sum() + fps_small.sum()
+            tp_med = tps_med.sum() + fps_med.sum()
+            tp_large = tps_large.sum() + fps_large.sum()
+            tp_all = tps_all.sum() + fps_all.sum()
         # filtering by cls_id or non class_agnostic mode (Mis-clsfs are successes)
-        else:
-            conf_matrix = ConfusionMatrix(len(CLASS_LIST))
-            conf_matrix.process_batch(bp_small, b_small)
-            tps_small, _ = conf_matrix.tp_fp()
-            conf_matrix = ConfusionMatrix(len(CLASS_LIST))
-            conf_matrix.process_batch(bp_med, b_med)
-            tps_med, _ = conf_matrix.tp_fp()
-            conf_matrix = ConfusionMatrix(len(CLASS_LIST))
-            conf_matrix.process_batch(bp_large, b_large)
-            tps_large, _ = conf_matrix.tp_fp()
-            conf_matrix = ConfusionMatrix(len(CLASS_LIST))
-            conf_matrix.process_batch(boxes_pred, boxes)
-            tps_all, _ = conf_matrix.tp_fp()
-
-            if cls_id is not None:  # consider single class, mis-clsfs or non-dets
-                tp_small = tps_small[cls_id]
-                tp_med = tps_med[cls_id]
-                tp_large = tps_large[cls_id]
-                tp_all = tps_all[cls_id]
-            else:                   # non class_agnostic, mis-clsfs or non-dets
-                tp_small = tps_small.sum()
-                tp_med = tps_med.sum()
-                tp_large = tps_large.sum()
-                tp_all = tps_all.sum()
+        elif cls_id is not None:  # consider single class, mis-clsfs or non-dets
+            tp_small = tps_small[cls_id]
+            tp_med = tps_med[cls_id]
+            tp_large = tps_large[cls_id]
+            tp_all = tps_all[cls_id]
+        else:                   # non class_agnostic, mis-clsfs or non-dets
+            tp_small = tps_small.sum()
+            tp_med = tps_med.sum()
+            tp_large = tps_large.sum()
+            tp_all = tps_all.sum()
 
         asr_small = 1. - tp_small / (b_small.shape[0] + 1e-6)
         asr_medium = 1. - tp_med / (b_med.shape[0] + 1e-6)
@@ -494,6 +493,9 @@ class PatchTester:
 
 def main():
     parser = get_argparser()
+    parser.add_argument('-w', '--weights', type=str,
+                        dest="weights", default=None, required=False,
+                        help='Path to yolov5 model wt file. If not provided, the model path from the cfg json is used (default: %(default)s)')
     parser.add_argument('-p', '--patchfile', type=str,
                         dest="patchfile", default=None, required=True,
                         help='Path to patch image file for testing (default: %(default)s)')
@@ -518,6 +520,7 @@ def main():
 
     args = parser.parse_args()
     cfg = load_config_object(args.config)
+    cfg.weights_file = args.weights if args.weights is not None else cfg.weights_file  # check if cfg.weights_file is ignored
     cfg.patchfile = args.patchfile
     cfg.imgdir = args.imgdir
 
