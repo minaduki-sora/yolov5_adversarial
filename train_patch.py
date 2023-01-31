@@ -27,6 +27,7 @@ from models.common import DetectMultiBackend
 from utils.torch_utils import select_device
 
 from adv_patch_gen.utils.config_parser import get_argparser, load_config_object
+from adv_patch_gen.utils.common import is_port_in_use
 from adv_patch_gen.utils.dataset import YOLODataset
 from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
 from adv_patch_gen.utils.loss import MaxProbExtractor, SaliencyLoss, TotalVariationLoss, NPSLoss
@@ -79,6 +80,10 @@ class PatchTrainer:
         Initialize tensorboard with optional name
         """
         if run_tb:
+            while is_port_in_use(port) and port < 65535:
+                port += 1
+                print(f"Port {port} is currently in use. Switching to {port} for tensorboard logging")
+
             tboard = program.TensorBoard()
             tboard.configure(argv=[None, "--logdir", log_dir, "--port", str(port)])
             url = tboard.launch()
