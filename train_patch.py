@@ -61,6 +61,9 @@ class PatchTrainer:
         # set log dir
         cfg.log_dir = osp.join(cfg.log_dir, f'{time.strftime("%Y%m%d-%H%M%S")}_{cfg.patch_name}')
         self.writer = self.init_tensorboard(cfg.log_dir, cfg.tensorboard_port)
+        # save config parameters to tensorboard logs
+        for cfg_key, cfg_val in cfg.items():
+            self.writer.add_text(cfg_key, str(cfg_val))
 
         # load dataset
         self.train_loader = torch.utils.data.DataLoader(
@@ -68,6 +71,7 @@ class PatchTrainer:
                         cfg.label_dir,
                         cfg.max_labels,
                         cfg.model_in_sz,
+                        cfg.use_even_odd_images,
                         shuffle=True),
             batch_size=self.cfg.batch_size,
             shuffle=True,

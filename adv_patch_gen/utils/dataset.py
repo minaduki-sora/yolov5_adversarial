@@ -4,7 +4,7 @@ where each image must have a corresponding label file with the same name
 """
 import glob
 import os.path as osp
-from typing import Tuple
+from typing import Tuple, Optional
 
 import numpy as np
 from PIL import Image
@@ -25,10 +25,18 @@ class YOLODataset(Dataset):
         label_dir: Directory containing the labels of the YOLO format dataset.
         max_labels: max number labels to use for each image
         model_in_sz: model input image size (height, width)
+        use_even_odd_images: optionally load a data subset based on the last numeric char of the img filename [all, even, odd]
         shuffle: Whether or not to shuffle the dataset.
     """
 
-    def __init__(self, image_dir: str, label_dir: str, max_labels: int, model_in_sz: Tuple[int, int], shuffle: bool = True):
+    def __init__(self,
+                 image_dir: str,
+                 label_dir: str,
+                 max_labels: int,
+                 model_in_sz: Tuple[int, int],
+                 use_even_odd_images: str = "all",
+                 shuffle: bool = True):
+        assert use_even_odd_images in {"all", "even", "odd"}, "use_even_odd param can only be all, even or odd"
         image_paths = glob.glob(osp.join(image_dir, "*"))
         label_paths = glob.glob(osp.join(label_dir, "*"))
         image_paths = sorted(
@@ -36,6 +44,11 @@ class YOLODataset(Dataset):
         label_paths = sorted(
             [p for p in label_paths if osp.splitext(p)[-1] in {".txt"}])
 
+        # if use_even_odd_images is set, use images with even/odd numbers in the last char of their filenames
+        if use_even_odd_images in {"even", "odd"}:
+            rem = 0 if use_even_odd_images == "even" else 1
+            image_paths = [p for p in image_paths if int(osp.splitext(p)[0][-1]) % 2 == rem]
+            label_paths = [p for p in label_paths if int(osp.splitext(p)[0][-1]) % 2 == rem]
         assert len(image_paths) == len(
             label_paths), "Number of images and number of labels don't match"
         # all corresponding image and labels must exist
@@ -62,7 +75,7 @@ class YOLODataset(Dataset):
         if label.ndim == 1:
             label = np.expand_dims(label, axis=0)
         # sort in reverse by bbox area
-        label = np.asarray(sorted(label, key=lambda annot: -annot[3]*annot[4]))
+        label = np.asarray(sorted(label, key=lambda annot: -annot[3] * annot[4]))
 
         label = torch.from_numpy(label).float()
         image, label = self.pad_and_scale(image, label)
@@ -73,6 +86,8 @@ class YOLODataset(Dataset):
     def pad_and_scale(self, img, lab):
         """
         Pad image and adjust label
+            img is a PIL image
+            lab is of fmt class x_center y_center width height with normalized coords
         """
         img_w, img_h = img.size
         if img_w == img_h:
@@ -105,4 +120,3 @@ class YOLODataset(Dataset):
         else:
             padded_lab = label[:self.max_n_labels]
         return padded_lab
-
