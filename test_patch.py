@@ -24,14 +24,16 @@ from models.common import DetectMultiBackend
 from utils.metrics import ConfusionMatrix
 from utils.general import non_max_suppression, xyxy2xywh
 from utils.torch_utils import select_device
+from utils.plots import Annotator, colors
 
 from adv_patch_gen.utils.config_parser import get_argparser, load_config_object
 from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
 from adv_patch_gen.utils.common import BColors
 
 
-IMG_EXTNS = {".png", ".jpg", ".jpeg"}
 CLASS_LIST = ["car", "van", "truck", "bus"]
+IMG_EXTNS = {".png", ".jpg", ".jpeg"}
+LABEL_2_CLASS = dict(enumerate(CLASS_LIST))
 
 
 def eval_coco_metrics(anno_json: str, pred_json: str, txt_save_path: str) -> np.ndarray:
@@ -154,12 +156,25 @@ class PatchTester:
         }
         return image_annotation
 
+    def draw_bbox_on_pil_image(self, bbox: np.ndarray, padded_img: Image) -> Image:
+        """
+        Draw bounding box on a PIL image and return said image after drawing
+        """
+        padded_img_np = np.ascontiguousarray(padded_img)
+        annotator = Annotator(padded_img_np, line_width=1, example=str(LABEL_2_CLASS))
+        for *xyxy, conf, cls in bbox:
+            c = int(cls)  # integer class
+            label = f'{LABEL_2_CLASS[c]} {conf:.2f}'
+            annotator.box_label(xyxy, label, color=colors(c, True))
+        return Image.fromarray(padded_img_np)
+
     def test(self,
              conf_thresh: float = 0.4,
              nms_thresh: float = 0.4,
              save_txt: bool = False,
              save_image: bool = False,
              save_orig_padded_image: bool = True,
+             draw_bbox_on_image: bool = True,
              class_agnostic: bool = False,
              cls_id: Optional[int] = None,
              max_images: int = 100000) -> None:
@@ -171,6 +186,7 @@ class PatchTester:
             save_txt: save the txt yolo format detections for the clean, properly and randomly patched images
             save_image: save properly and randomly patched images
             save_orig_padded_image: save orig padded images
+            draw_bbox_on_image: Draw bboxes on the original images and the random noise & properly patched images
             class_agnostic: all classes are teated the same. Use when only evaluating for obj det & not classification
             cls_id: filtering for a specific class for evaluation only
             max_images: max number of images to evaluate from inside imgdir
@@ -264,9 +280,6 @@ class PatchTester:
 
             padded_img = transforms.Resize(model_in_sz)(padded_img)
             cleanname = img_name + ".png"
-            # save img
-            if save_image and save_orig_padded_image:
-                padded_img.save(osp.join(clean_img_dir, cleanname))
 
             #######################################
             # generate labels for the patched image
@@ -309,6 +322,14 @@ class PatchTester:
             if save_txt:
                 textfile.close()
 
+            # save img
+            if save_image and save_orig_padded_image:
+                if draw_bbox_on_image:
+                    padded_img_drawn = self.draw_bbox_on_pil_image(all_labels[-1], padded_img)
+                    padded_img_drawn.save(osp.join(clean_img_dir, cleanname))
+                else:
+                    padded_img.save(osp.join(clean_img_dir, cleanname))
+
             # use a filler ones array for no dets
             label = np.asarray(labels) if labels else np.ones([5])
             label = torch.from_numpy(label).float()
@@ -335,9 +356,6 @@ class PatchTester:
                 p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
 
             properpatchedname = img_name + ".png"
-            if save_image:
-                p_img_pil.save(osp.join(proper_img_dir, properpatchedname))
-
             # generate a label file for the image with sticker
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = osp.join(proper_txt_dir, txtname)
@@ -369,6 +387,14 @@ class PatchTester:
             if save_txt:
                 textfile.close()
 
+            # save properly patched img
+            if save_image:
+                if draw_bbox_on_image:
+                    p_img_pil_drawn = self.draw_bbox_on_pil_image(all_patch_preds[-1], p_img_pil)
+                    p_img_pil_drawn.save(osp.join(proper_img_dir, properpatchedname))
+                else:
+                    p_img_pil.save(osp.join(proper_img_dir, properpatchedname))
+
             #######################################
             # Apply random patches
             # create a random patch, transform it and add it to image
@@ -378,12 +404,10 @@ class PatchTester:
             p_img_batch = self.patch_applier(img_fake_batch, adv_batch_t)
             p_img = p_img_batch.squeeze(0)
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
-            properpatchedname = img_name + ".png"
-            if save_image:
-                p_img_pil.save(osp.join(random_img_dir, properpatchedname))
 
+            randompatchedname = img_name + ".png"
             # generate a label file for the image with random patch
-            txtname = properpatchedname.replace('.png', '.txt')
+            txtname = randompatchedname.replace('.png', '.txt')
             txtpath = osp.join(random_txt_dir, txtname)
 
             padded_img_tensor = transforms.ToTensor()(p_img_pil).unsqueeze(0).to(self.dev)
@@ -412,6 +436,14 @@ class PatchTester:
                      'category_id': 0 if class_agnostic else int(cls_id_box)})
             if save_txt:
                 textfile.close()
+
+            # save randomly patched img
+            if save_image:
+                if draw_bbox_on_image:
+                    p_img_pil_drawn = self.draw_bbox_on_pil_image(all_noise_preds[-1], p_img_pil)
+                    p_img_pil_drawn.save(osp.join(random_img_dir, randompatchedname))
+                else:
+                    p_img_pil.save(osp.join(random_img_dir, randompatchedname))
 
         # reorder labels to (Array[M, 5]), class, x1, y1, x2, y2
         all_labels = torch.cat(all_labels)[:, [5, 0, 1, 2, 3]]
