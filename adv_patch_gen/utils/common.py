@@ -1,6 +1,8 @@
 """
 Common utils
 """
+import socket
+
 
 class BColors:
     """
@@ -17,3 +19,11 @@ class BColors:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
+
+
+def is_port_in_use(port: int) -> bool:
+    """
+    Checks if a port is free for use
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as stream:
+        return stream.connect_ex(('localhost', int(port))) == 0
