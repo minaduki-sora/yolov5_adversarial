@@ -31,8 +31,9 @@
     "tv_mult": 2.5,
     "nps_mult": 0.01,
     "batch_size": 8,
-    "debug_mode": true,
+    "debug_mode": false,
     "loss_target": "obj * cls",
+    "<-------------->": "# comments below",
     "<use_even_odd_images>": "# (str), ('all', 'even', 'odd'): use images with even/odd numbers in the last char of their filenames",
     "<model_in_sz>": "# (int, int): model input height, width",
     "<patch_name>": "# (str): gray random, or path_to_init_patch",
@@ -41,5 +42,6 @@
     "<rotate_patches>": "# (bool): rotate patches or not",
     "<transform_patches>": "# (bool): add bightness, contrast and noise transforms to patches or not",
     "<device>": "# (str): 'cpu' or 'cuda' or 'cuda:0,1,2,3'",
+    "<debug_mode>": "# (bool): if yes, images with adv drawn saved during each batch",
     "<loss_target>": "# (str): 'obj', 'cls', 'obj * cls'"
 }
