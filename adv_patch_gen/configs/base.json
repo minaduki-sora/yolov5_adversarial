@@ -9,9 +9,15 @@
     "device": "cuda:0",
     "use_amp": true,
     "patch_name": "base",
-    "model_in_sz": [640, 640],
+    "model_in_sz": [
+        640,
+        640
+    ],
     "patch_src": "gray",
-    "patch_size": [64, 64],
+    "patch_size": [
+        64,
+        64
+    ],
     "objective_class_id": null,
     "target_size_frac": 0.3,
     "rotate_patches": true,
@@ -27,13 +33,13 @@
     "batch_size": 8,
     "debug_mode": true,
     "loss_target": "obj * cls",
-    "<use_even_odd_images>": "# (str) must be (all, even, odd): use images with even/odd numbers in the last char of their filenames",
+    "<use_even_odd_images>": "# (str), ('all', 'even', 'odd'): use images with even/odd numbers in the last char of their filenames",
     "<model_in_sz>": "# (int, int): model input height, width",
-    "<patch_name>": "# str: gray random, or path_to_init_patch",
+    "<patch_name>": "# (str): gray random, or path_to_init_patch",
     "<patch_size>": "# (int, int): must be (height, width)",
-    "<objective_class_id>": "# int: class id to target for adv attack. Use null for general attack for all classes",
-    "<rotate_patches>": "# bool: rotate patches or not",
-    "<transform_patches>": "# bool: add bightness, contrast and noise transforms to patches or not",
-    "<device>": "# str, cpu or cuda or cuda:0,1,2,3",
-    "<loss_target>": "# obj, cls, obj * cls"
+    "<objective_class_id>": "# (int): class id to target for adv attack. Use null for general attack for all classes",
+    "<rotate_patches>": "# (bool): rotate patches or not",
+    "<transform_patches>": "# (bool): add bightness, contrast and noise transforms to patches or not",
+    "<device>": "# (str): 'cpu' or 'cuda' or 'cuda:0,1,2,3'",
+    "<loss_target>": "# (str): 'obj', 'cls', 'obj * cls'"
 }
