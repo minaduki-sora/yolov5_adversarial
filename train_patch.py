@@ -10,6 +10,8 @@ import json
 import logging
 from contextlib import nullcontext
 
+import random
+import numpy as np
 from PIL import Image
 from tqdm import tqdm
 from easydict import EasyDict as edict
@@ -32,6 +34,13 @@ from adv_patch_gen.utils.dataset import YOLODataset
 from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
 from adv_patch_gen.utils.loss import MaxProbExtractor, SaliencyLoss, TotalVariationLoss, NPSLoss
 
+# optionally set seed for repeatability
+SEED = None
+if SEED is not None:
+    random.seed(SEED)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed(SEED)
 torch.backends.cudnn.benchmark = True
 
 

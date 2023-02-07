@@ -7,6 +7,7 @@ import os.path as osp
 import time
 import json
 import glob
+import random
 from pathlib import Path
 from typing import Optional
 from contextlib import redirect_stdout
@@ -29,6 +30,15 @@ from utils.plots import Annotator, colors
 from adv_patch_gen.utils.config_parser import get_argparser, load_config_object
 from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
 from adv_patch_gen.utils.common import BColors
+
+# optionally set seed for repeatability
+SEED = None
+if SEED is not None:
+    random.seed(SEED)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed(SEED)
+torch.backends.cudnn.benchmark = True
 
 
 CLASS_LIST = ["car", "van", "truck", "bus"]
@@ -556,14 +566,14 @@ def main():
     cfg.patchfile = args.patchfile
     cfg.imgdir = args.imgdir
 
-    savename = cfg.patch_name + ('_agnostic' if args.class_agnostic else '')
+    savename = f'{time.strftime("%Y%m%d-%H%M%S")}_' + cfg.patch_name
     if args.class_agnostic and args.target_class is not None:
         print(f"""{BColors.WARNING}WARNING:{BColors.ENDC} target_class and class_agnostic are both set.
               Target_class will be ignored and metrics will be class agnostic. Only set either.""")
         args.target_class = None
     else:
         savename += (f'_tc{args.target_class}' if args.target_class is not None else '')
-    savename += f'_{time.strftime("%Y%m%d-%H%M%S")}'
+    savename += ('_agnostic' if args.class_agnostic else '')
     cfg.savedir = osp.join(args.savedir, savename)
 
     print(f"{BColors.OKBLUE} Test Arguments: {args} {BColors.ENDC}")
