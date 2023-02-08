@@ -4,11 +4,13 @@
     "use_even_odd_images": "all",
     "log_dir": "runs/train_adversarial",
     "tensorboard_port": 8994,
+    "tensorboard_batch_log_interval": 15,
     "weights_file": "runs/train/s_coco_e100_4Class_Vehicle/weights/best.pt",
     "triplet_printfile": "adv_patch_gen/utils/30_rgb_triplets.csv",
     "device": "cuda:0",
     "use_amp": true,
     "patch_name": "base",
+    "patch_save_epoch_freq": 1,
     "model_in_sz": [
         640,
         640

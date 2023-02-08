@@ -110,11 +110,9 @@ class PatchTrainer:
         """
         Optimize a patch to generate an adversarial example.
         """
-
         # make output dirs
         patch_dir = osp.join(self.cfg.log_dir, "patches")
         os.makedirs(patch_dir, exist_ok=True)
-        log_file = osp.join(self.cfg.log_dir, 'log.txt')
         if self.cfg.debug_mode:
             os.makedirs(osp.join(self.cfg.log_dir, "patch_applied_imgs"), exist_ok=True)
         # dump cfg json file
@@ -127,7 +125,7 @@ class PatchTrainer:
             self.cfg.loss_target = lambda obj, cls: obj
         elif loss_target == "cls":
             self.cfg.loss_target = lambda obj, cls: cls
-        elif loss_target == "obj * cls":
+        elif loss_target in {"obj * cls", "obj*cls"}:
             self.cfg.loss_target = lambda obj, cls: obj * cls
         else:
             raise NotImplementedError(
@@ -147,8 +145,8 @@ class PatchTrainer:
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, 'min', patience=50)
 
+        start_time = time.time()
         for epoch in range(self.cfg.n_epochs):
-            print(epoch)
             out_patch_path = osp.join(
                 patch_dir, f"{self.cfg.patch_name}_epoch_{epoch}.jpg")
             ep_loss = 0
@@ -194,36 +192,35 @@ class PatchTrainer:
                     # keep patch in image range
                     adv_patch_cpu.data.clamp_(0, 1)
 
-                    if i_batch % 15 == 0:
+                    if i_batch % self.cfg.tensorboard_batch_log_interval == 0:
                         iteration = self.epoch_length * epoch + i_batch
                         self.writer.add_scalar(
-                            'total_loss', loss.detach().cpu().numpy(), iteration)
+                            "total_loss", loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar(
-                            'loss/det_loss', det_loss.detach().cpu().numpy(), iteration)
+                            "loss/det_loss", det_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar(
-                            'loss/nps_loss', nps_loss.detach().cpu().numpy(), iteration)
+                            "loss/nps_loss", nps_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar(
-                            'loss/tv_loss', tv_loss.detach().cpu().numpy(), iteration)
+                            "loss/tv_loss", tv_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar(
-                            'misc/epoch', epoch, iteration)
+                            "misc/epoch", epoch, iteration)
                         self.writer.add_scalar(
-                            'misc/learning_rate', optimizer.param_groups[0]["lr"], iteration)
+                            "misc/learning_rate", optimizer.param_groups[0]["lr"], iteration)
                         self.writer.add_image(
-                            'patch', adv_patch_cpu, iteration)
-                    if i_batch + 1 >= len(self.train_loader):
-                        print('\n')
-                    else:
+                            "patch", adv_patch_cpu, iteration)
+                    if i_batch + 1 < len(self.train_loader):
                         del adv_batch_t, output, max_prob, det_loss, p_img_batch, nps_loss, tv_loss, loss
                         # torch.cuda.empty_cache()  # note emptying cache adds too much overhead
-            ep_loss = ep_loss/len(self.train_loader)
+            ep_loss = ep_loss / len(self.train_loader)
             scheduler.step(ep_loss)
 
-            # save patch after every 1 epoch(s)
-            if epoch % 1 == 0:
+            # save patch after every patch_save_epoch_freq epochs
+            if epoch % self.cfg.patch_save_epoch_freq == 0:
                 img = transforms.ToPILImage('RGB')(adv_patch_cpu)
                 img.save(out_patch_path)
                 del adv_batch_t, output, max_prob, det_loss, p_img_batch, nps_loss, tv_loss, loss
                 # torch.cuda.empty_cache()  # note emptying cache adds too much overhead
+        print(f"Total training time {time.time() - start_time:.2f}s")
 
     def generate_patch(self, patch_type: str) -> torch.Tensor:
         """
