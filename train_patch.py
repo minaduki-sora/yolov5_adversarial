@@ -7,7 +7,6 @@ import os
 import os.path as osp
 import time
 import json
-import logging
 from contextlib import nullcontext
 
 import random
@@ -41,7 +40,8 @@ if SEED is not None:
     np.random.seed(SEED)
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED)
-torch.backends.cudnn.benchmark = True
+# setting benchmark to False reduces training time for our setup
+torch.backends.cudnn.benchmark = False
 
 
 class PatchTrainer:
@@ -133,36 +133,6 @@ class PatchTrainer:
             raise NotImplementedError(
                 f"Loss target {loss_target} not been implemented")
 
-        # python logging
-        ###############################################################################
-        # https://docs.python.org/3/howto/logging-cookbook.html#logging-to-multiple-destinations
-        # set up logging to file - see previous section for more details
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
-            datefmt='%m-%d %H:%M',
-            filename=log_file,
-            filemode='w')
-        # define a Handler which writes INFO messages or higher to the sys.stderr
-        console = logging.StreamHandler()
-        console.setLevel(logging.INFO)
-        # set a format which is simpler for console use
-        formatter = logging.Formatter(
-            '%(name)-12s: %(levelname)-8s %(message)s')
-        # tell the handler to use this format
-        console.setFormatter(formatter)
-        # add the handler to the root logger
-        logging.getLogger('').addHandler(console)
-        ###############################################################################
-
-        # print cfg values to log
-        logging.info("patch_dir: %s", patch_dir)
-        logging.info("config_dict:")
-        config_dict = {key: value for key, value in self.cfg.__dict__.items(
-        ) if not key.startswith('__') and not callable(key)}
-        for k, v in config_dict.items():
-            logging.info("key=%s\t val=%s", k, v)
-
         # Generate init patch
         if self.cfg.patch_src == 'gray':
             adv_patch_cpu = self.generate_patch("gray")
@@ -177,13 +147,10 @@ class PatchTrainer:
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, 'min', patience=50)
 
-        et0 = time.time()
         for epoch in range(self.cfg.n_epochs):
+            print(epoch)
             out_patch_path = osp.join(
                 patch_dir, f"{self.cfg.patch_name}_epoch_{epoch}.jpg")
-            ep_det_loss = 0
-            ep_nps_loss = 0
-            ep_tv_loss = 0
             ep_loss = 0
             min_tv_loss = torch.tensor(self.cfg.min_tv_loss).to(self.dev)
 
@@ -193,8 +160,6 @@ class PatchTrainer:
                 with autograd.set_detect_anomaly(mode=True if self.cfg.debug_mode else False):
                     img_batch = img_batch.to(self.dev)
                     lab_batch = lab_batch.to(self.dev)
-                    if (i_batch % 100) == 0:
-                        logging.info("TRAINING EPOCH %i, BATCH %i", epoch, i_batch)
                     adv_patch = adv_patch_cpu.to(self.dev)
                     adv_batch_t = self.patch_transformer(
                         adv_patch, lab_batch, self.cfg.model_in_sz,
@@ -221,10 +186,6 @@ class PatchTrainer:
                     det_loss = torch.mean(max_prob)
 
                     loss = det_loss + nps_loss + tv_loss
-
-                    ep_det_loss += det_loss.detach().cpu().numpy()
-                    ep_nps_loss += nps_loss.detach().cpu().numpy()
-                    ep_tv_loss += tv_loss.detach().cpu().numpy()
                     ep_loss += loss
 
                     loss.backward()
@@ -253,27 +214,16 @@ class PatchTrainer:
                         print('\n')
                     else:
                         del adv_batch_t, output, max_prob, det_loss, p_img_batch, nps_loss, tv_loss, loss
-                        torch.cuda.empty_cache()
-            et1 = time.time()
-            ep_det_loss = ep_det_loss/len(self.train_loader)
-            ep_nps_loss = ep_nps_loss/len(self.train_loader)
-            ep_tv_loss = ep_tv_loss/len(self.train_loader)
+                        # torch.cuda.empty_cache()  # note emptying cache adds too much overhead
             ep_loss = ep_loss/len(self.train_loader)
-
             scheduler.step(ep_loss)
-            if True:
-                logging.info("  EPOCH NR: %s", epoch)
-                logging.info("EPOCH LOSS: %s", ep_loss)
-                logging.info("  DET LOSS: %s", ep_det_loss)
-                logging.info("  NPS LOSS: %s", ep_nps_loss)
-                logging.info("   TV LOSS: %s", ep_tv_loss)
-                logging.info("EPOCH TIME: %s", et1 - et0)
 
+            # save patch after every 1 epoch(s)
+            if epoch % 1 == 0:
                 img = transforms.ToPILImage('RGB')(adv_patch_cpu)
                 img.save(out_patch_path)
                 del adv_batch_t, output, max_prob, det_loss, p_img_batch, nps_loss, tv_loss, loss
-                torch.cuda.empty_cache()
-            et0 = time.time()
+                # torch.cuda.empty_cache()  # note emptying cache adds too much overhead
 
     def generate_patch(self, patch_type: str) -> torch.Tensor:
         """
