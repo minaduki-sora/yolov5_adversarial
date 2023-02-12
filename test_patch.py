@@ -9,7 +9,7 @@ import json
 import glob
 import random
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from contextlib import redirect_stdout
 
 import tqdm
@@ -31,6 +31,7 @@ from adv_patch_gen.utils.config_parser import get_argparser, load_config_object
 from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
 from adv_patch_gen.utils.common import BColors
 
+IMG_EXTNS = {".png", ".jpg", ".jpeg"}
 # optionally set seed for repeatability
 SEED = None
 if SEED is not None:
@@ -38,12 +39,7 @@ if SEED is not None:
     np.random.seed(SEED)
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED)
-torch.backends.cudnn.benchmark = True
-
-
-CLASS_LIST = ["car", "van", "truck", "bus"]
-IMG_EXTNS = {".png", ".jpg", ".jpeg"}
-LABEL_2_CLASS = dict(enumerate(CLASS_LIST))
+torch.backends.cudnn.benchmark = False
 
 
 def eval_coco_metrics(anno_json: str, pred_json: str, txt_save_path: str) -> np.ndarray:
@@ -85,7 +81,14 @@ class PatchTester:
         self.patch_applier = PatchApplier(cfg.patch_alpha).to(self.dev)
 
     @staticmethod
-    def calc_asr(boxes, boxes_pred, lo_area: float = 20**2, hi_area: float = 67**2, cls_id: Optional[int] = None, class_agnostic: bool = False) -> float:
+    def calc_asr(
+        boxes,
+        boxes_pred,
+        class_list: List[str],
+        lo_area: float = 20**2,
+        hi_area: float = 67**2,
+        cls_id: Optional[int] = None,
+        class_agnostic: bool = False) -> float:
         """
         Calculate attack success rate (How many bounding boxes were hidden from the detector)
         for all predictions and for different bbox areas.
@@ -93,6 +96,7 @@ class PatchTester:
         Args:
             boxes: torch.Tensor, first pass boxes (gt unpatched boxes) [class, x1, y1, x2, y2]
             boxes_pred: torch.Tensor, second pass boxes (patched boxes) [x1, y1, x2, y2, conf, class]
+            class_list: list of class names in correct order
             lo_area: small bbox area threshold
             hi_area: large bbox area threshold
             cls_id: filter for a particular class
@@ -118,16 +122,16 @@ class PatchTester:
         assert (bp_small.shape[0] + bp_med.shape[0] + bp_large.shape[0]) == boxes_pred.shape[0]
         assert (b_small.shape[0] + b_med.shape[0] + b_large.shape[0]) == boxes.shape[0]
 
-        conf_matrix = ConfusionMatrix(len(CLASS_LIST))
+        conf_matrix = ConfusionMatrix(len(class_list))
         conf_matrix.process_batch(bp_small, b_small)
         tps_small, fps_small = conf_matrix.tp_fp()
-        conf_matrix = ConfusionMatrix(len(CLASS_LIST))
+        conf_matrix = ConfusionMatrix(len(class_list))
         conf_matrix.process_batch(bp_med, b_med)
         tps_med, fps_med = conf_matrix.tp_fp()
-        conf_matrix = ConfusionMatrix(len(CLASS_LIST))
+        conf_matrix = ConfusionMatrix(len(class_list))
         conf_matrix.process_batch(bp_large, b_large)
         tps_large, fps_large = conf_matrix.tp_fp()
-        conf_matrix = ConfusionMatrix(len(CLASS_LIST))
+        conf_matrix = ConfusionMatrix(len(class_list))
         conf_matrix.process_batch(boxes_pred, boxes)
         tps_all, fps_all = conf_matrix.tp_fp()
 
@@ -171,10 +175,12 @@ class PatchTester:
         Draw bounding box on a PIL image and return said image after drawing
         """
         padded_img_np = np.ascontiguousarray(padded_img)
-        annotator = Annotator(padded_img_np, line_width=1, example=str(LABEL_2_CLASS))
+        label_2_class = dict(enumerate(self.cfg.class_list))
+
+        annotator = Annotator(padded_img_np, line_width=1, example=str(label_2_class))
         for *xyxy, conf, cls in bbox:
             c = int(cls)  # integer class
-            label = f'{LABEL_2_CLASS[c]} {conf:.2f}'
+            label = f'{label_2_class[c]} {conf:.2f}'
             annotator.box_label(xyxy, label, color=colors(c, True))
         return Image.fromarray(padded_img_np)
 
@@ -463,19 +469,19 @@ class PatchTester:
 
         # Calc confusion matrices if not class_agnostic
         if not class_agnostic:
-            patch_confusion_matrix = ConfusionMatrix(len(CLASS_LIST))
+            patch_confusion_matrix = ConfusionMatrix(len(self.cfg.class_list))
             patch_confusion_matrix.process_batch(all_patch_preds, all_labels)
-            noise_confusion_matrix = ConfusionMatrix(len(CLASS_LIST))
+            noise_confusion_matrix = ConfusionMatrix(len(self.cfg.class_list))
             noise_confusion_matrix.process_batch(all_noise_preds, all_labels)
 
-            patch_confusion_matrix.plot(save_dir=self.cfg.savedir, names=CLASS_LIST, save_name="conf_matrix_patch.png")
-            noise_confusion_matrix.plot(save_dir=self.cfg.savedir, names=CLASS_LIST, save_name="conf_matrix_noise.png")
+            patch_confusion_matrix.plot(save_dir=self.cfg.savedir, names=self.cfg.class_list, save_name="conf_matrix_patch.png")
+            noise_confusion_matrix.plot(save_dir=self.cfg.savedir, names=self.cfg.class_list, save_name="conf_matrix_noise.png")
 
         # add all required fields for a reference GT clean annotation
         clean_gt_results_json = {"annotations": clean_gt_results,
                                  "categories": [],
                                  "images": clean_image_annotations}
-        for index, label in enumerate(CLASS_LIST, start=0):
+        for index, label in enumerate(self.cfg.class_list, start=0):
             categories = {"supercategory": "Defect",
                           "id": index,
                           "name": label}
@@ -506,7 +512,8 @@ class PatchTester:
         print(f"{BColors.HEADER}### Metrics for images with correct patches ###{BColors.ENDC}")
         eval_coco_metrics(clean_gt_json, patch_json, patch_txt_path)
 
-        asr_s, asr_m, asr_l, asr_a = PatchTester.calc_asr(all_labels, all_patch_preds, cls_id=cls_id, class_agnostic=class_agnostic)
+        asr_s, asr_m, asr_l, asr_a = PatchTester.calc_asr(
+            all_labels, all_patch_preds, self.cfg.class_list, cls_id=cls_id, class_agnostic=class_agnostic)
         with open(patch_txt_path, 'a', encoding="utf-8") as f_patch:
             asr_str = ''
             asr_str += f" Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area= small | = {asr_s:.3f}\n"
@@ -519,7 +526,8 @@ class PatchTester:
         print(f"{BColors.HEADER}### Metrics for images with random noise patches ###{BColors.ENDC}")
         eval_coco_metrics(clean_gt_json, noise_json, noise_txt_path)
 
-        asr_s, asr_m, asr_l, asr_a = PatchTester.calc_asr(all_labels, all_noise_preds, cls_id=cls_id, class_agnostic=class_agnostic)
+        asr_s, asr_m, asr_l, asr_a = PatchTester.calc_asr(
+            all_labels, all_noise_preds, self.cfg.class_list, cls_id=cls_id, class_agnostic=class_agnostic)
         with open(noise_txt_path, 'a', encoding="utf-8") as f_noise:
             asr_str = ''
             asr_str += f" Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area= small | = {asr_s:.3f}\n"
