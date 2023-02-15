@@ -9,6 +9,7 @@ import time
 import json
 from contextlib import nullcontext
 
+import glob
 import random
 import numpy as np
 from PIL import Image
@@ -26,9 +27,11 @@ from tensorboard import program
 
 from models.common import DetectMultiBackend
 from utils.torch_utils import select_device
+from utils.general import non_max_suppression, xyxy2xywh
 
+from test_patch import PatchTester
 from adv_patch_gen.utils.config_parser import get_argparser, load_config_object
-from adv_patch_gen.utils.common import is_port_in_use
+from adv_patch_gen.utils.common import is_port_in_use, pad_to_square, IMG_EXTNS
 from adv_patch_gen.utils.dataset import YOLODataset
 from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
 from adv_patch_gen.utils.loss import MaxProbExtractor, SaliencyLoss, TotalVariationLoss, NPSLoss
@@ -50,7 +53,6 @@ class PatchTrainer:
     """
 
     def __init__(self, cfg: edict):
-        self.cfg = cfg
         self.dev = select_device(cfg.device)
 
         model = DetectMultiBackend(cfg.weights_file, device=self.dev, dnn=False, data=None, fp16=False)
@@ -72,9 +74,11 @@ class PatchTrainer:
         self.writer = self.init_tensorboard(cfg.log_dir, cfg.tensorboard_port)
         # save config parameters to tensorboard logs
         for cfg_key, cfg_val in cfg.items():
-            self.writer.add_text(cfg_key, str(cfg_val))
+            if not(cfg_key[0] == '<' and cfg_key[-1] == '>'):  # don't add comments to tb log
+                self.writer.add_text(cfg_key, str(cfg_val))
 
-        # load dataset
+        cfg.val_image_dir = cfg.val_image_dir if "val_image_dir" in cfg else None
+        # load training dataset
         self.train_loader = torch.utils.data.DataLoader(
             YOLODataset(cfg.image_dir,
                         cfg.label_dir,
@@ -82,11 +86,12 @@ class PatchTrainer:
                         cfg.model_in_sz,
                         cfg.use_even_odd_images,
                         shuffle=True),
-            batch_size=self.cfg.batch_size,
+            batch_size=cfg.batch_size,
             shuffle=True,
             num_workers=10,
             pin_memory=True if self.dev.type == "cuda" else False)
         self.epoch_length = len(self.train_loader)
+        self.cfg = cfg
 
     def init_tensorboard(self, log_dir: str = None, port: int = 6006, run_tb=True):
         """
@@ -106,6 +111,34 @@ class PatchTrainer:
             return SummaryWriter(log_dir)
         return SummaryWriter()
 
+    def generate_patch(self, patch_type: str) -> torch.Tensor:
+        """
+        Generate a random patch as a starting point for optimization.
+
+        Arguments:
+            patch_type: Can be 'gray' or 'random'. Whether or not generate a gray or a random patch.
+        """
+        p_w, p_h = self.cfg.patch_size
+        if patch_type == 'gray':
+            adv_patch_cpu = torch.full((3, p_h, p_w), 0.5)
+        elif patch_type == 'random':
+            adv_patch_cpu = torch.rand((3, p_h, p_w))
+
+        return adv_patch_cpu
+
+    def read_image(self, path):
+        """
+        Read an input image to be used as a patch
+
+        :param path: Path to the image to be read.
+        :return: Returns the transformed patch as a pytorch Tensor.
+        """
+        patch_img = Image.open(path).convert('RGB')
+        transforms_resize = transforms.Resize(self.cfg.patch_size)
+        patch_img = transforms_resize(patch_img)
+        adv_patch_cpu = transforms.ToTensor()(patch_img)
+        return adv_patch_cpu
+
     def train(self) -> None:
         """
         Optimize a patch to generate an adversarial example.
@@ -114,7 +147,9 @@ class PatchTrainer:
         patch_dir = osp.join(self.cfg.log_dir, "patches")
         os.makedirs(patch_dir, exist_ok=True)
         if self.cfg.debug_mode:
-            os.makedirs(osp.join(self.cfg.log_dir, "patch_applied_imgs"), exist_ok=True)
+            for img_dir in ["train_patch_applied_imgs", "val_clean_imgs", "val_patch_applied_imgs"]:
+                os.makedirs(osp.join(self.cfg.log_dir, img_dir), exist_ok=True)
+
         # dump cfg json file
         with open(osp.join(self.cfg.log_dir, "cfg.json"), 'w', encoding='utf-8') as json_f:
             json.dump(self.cfg, json_f, ensure_ascii=False, indent=4)
@@ -153,7 +188,7 @@ class PatchTrainer:
             min_tv_loss = torch.tensor(self.cfg.min_tv_loss).to(self.dev)
 
             for i_batch, (img_batch, lab_batch) in tqdm(enumerate(self.train_loader),
-                                                        desc=f'Running epoch {epoch}',
+                                                        desc=f'Running train epoch {epoch}',
                                                         total=self.epoch_length):
                 with autograd.set_detect_anomaly(mode=True if self.cfg.debug_mode else False):
                     img_batch = img_batch.to(self.dev)
@@ -171,7 +206,7 @@ class PatchTrainer:
                     if self.cfg.debug_mode:
                         img = p_img_batch[1, :, :, ]
                         img = transforms.ToPILImage()(img.detach().cpu())
-                        img.save(osp.join(self.cfg.log_dir, "patch_applied_imgs", f"b_{i_batch}.jpg"))
+                        img.save(osp.join(self.cfg.log_dir, "train_patch_applied_imgs", f"b_{i_batch}.jpg"))
 
                     with autocast() if self.cfg.use_amp else nullcontext():
                         output = self.model(p_img_batch)[0]
@@ -220,35 +255,118 @@ class PatchTrainer:
                 img.save(out_patch_path)
                 del adv_batch_t, output, max_prob, det_loss, p_img_batch, nps_loss, tv_loss, loss
                 # torch.cuda.empty_cache()  # note emptying cache adds too much overhead
+            
+            # run validation to calc asr on val set if self.val_dir is not None
+            if self.cfg.val_image_dir is not None and epoch % self.cfg.val_epoch_freq == 0:
+                with torch.no_grad():
+                    self.val(epoch, out_patch_path)
         print(f"Total training time {time.time() - start_time:.2f}s")
 
-    def generate_patch(self, patch_type: str) -> torch.Tensor:
+    def val(self, epoch: int, patchfile: str, conf_thresh: float = 0.4, nms_thresh: float = 0.4) -> None:
         """
-        Generate a random patch as a starting point for optimization.
-
-        Arguments:
-            patch_type: Can be 'gray' or 'random'. Whether or not generate a gray or a random patch.
+        Calculates the attack success rate according for the patch with respect to different bounding box areas
         """
-        p_w, p_h = self.cfg.patch_size
-        if patch_type == 'gray':
-            adv_patch_cpu = torch.full((3, p_h, p_w), 0.5)
-        elif patch_type == 'random':
-            adv_patch_cpu = torch.rand((3, p_h, p_w))
-
-        return adv_patch_cpu
-
-    def read_image(self, path):
-        """
-        Read an input image to be used as a patch
-
-        :param path: Path to the image to be read.
-        :return: Returns the transformed patch as a pytorch Tensor.
-        """
-        patch_img = Image.open(path).convert('RGB')
-        transforms_resize = transforms.Resize(self.cfg.patch_size)
-        patch_img = transforms_resize(patch_img)
+        # load patch from file
+        patch_img = Image.open(patchfile).convert('RGB')
+        patch_img = transforms.Resize(self.cfg.patch_size)(patch_img)
         adv_patch_cpu = transforms.ToTensor()(patch_img)
-        return adv_patch_cpu
+        adv_patch = adv_patch_cpu.to(self.dev)
+
+        img_paths = glob.glob(osp.join(self.cfg.val_image_dir, "*"))
+        img_paths = sorted([p for p in img_paths if osp.splitext(p)[-1] in IMG_EXTNS])
+
+        # to calc confusion matrixes and attack success rates later
+        all_labels = []
+        all_patch_preds = []
+
+        m_h, m_w = self.cfg.model_in_sz
+        cls_id = self.cfg.objective_class_id
+        #### iterate through all images ####
+        for imgfile in tqdm(img_paths, desc=f'Running val epoch {epoch}'):
+            img_name = osp.splitext(imgfile)[0].split('/')[-1]
+            img = Image.open(imgfile).convert('RGB')
+            padded_img = pad_to_square(img)
+            padded_img = transforms.Resize(self.cfg.model_in_sz)(padded_img)
+
+            #######################################
+            # generate labels to use later for patched image
+            padded_img_tensor = transforms.ToTensor()(padded_img).unsqueeze(0).to(self.dev)
+            pred = self.model(padded_img_tensor)
+            boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
+            # if doing targeted class performance check, ignore non target classes
+            if cls_id is not None:
+                boxes = boxes[boxes[:, -1] == cls_id]
+            all_labels.append(boxes.clone())
+            boxes = xyxy2xywh(boxes)
+
+            labels = []
+            for box in boxes:
+                cls_id_box = box[-1].item()
+                x_center, y_center, width, height = box[:4]
+                x_center, y_center, width, height = x_center.item(), y_center.item(), width.item(), height.item()
+                labels.append([cls_id_box, x_center / m_w, y_center / m_h, width / m_w, height / m_h])
+ 
+            # save img if debug mode
+            if self.cfg.debug_mode:
+                padded_img_drawn = PatchTester.draw_bbox_on_pil_image(
+                    all_labels[-1], padded_img, self.cfg.class_list)
+                padded_img_drawn.save(osp.join(self.cfg.log_dir, "val_clean_imgs", img_name + ".jpg"))
+
+            # use a filler ones array for no dets
+            label = np.asarray(labels) if labels else np.ones([5])
+            label = torch.from_numpy(label).float()
+            if label.dim() == 1:
+                label = label.unsqueeze(0)
+
+            #######################################
+            # Apply proper patches
+            padded_img_copy = transforms.ToTensor()(padded_img).to(self.dev)
+            img_fake_batch = padded_img_copy.unsqueeze(0)
+            lab_fake_batch = label.unsqueeze(0).to(self.dev)
+
+            if len(lab_fake_batch) == 1 and np.array_equal(lab_fake_batch[0], [1., 1., 1., 1., 1.]):
+                # no det, use images without patches
+                p_img_pil = padded_img
+            else:
+                # transform patch and add it to image
+                adv_batch_t = self.patch_transformer(
+                    adv_patch, lab_fake_batch, self.cfg.model_in_sz,
+                    do_transforms=self.cfg.transform_patches,
+                    do_rotate=self.cfg.rotate_patches, rand_loc=False)
+                p_img_batch = self.patch_applier(img_fake_batch, adv_batch_t)
+                p_img = p_img_batch.squeeze(0)
+                p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
+
+            padded_img_tensor = transforms.ToTensor()(p_img_pil).unsqueeze(0).to(self.dev)
+            pred = self.model(padded_img_tensor)
+            boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
+            # if doing targeted class performance check, ignore non target classes
+            if cls_id is not None:
+                boxes = boxes[boxes[:, -1] == cls_id]
+            all_patch_preds.append(boxes.clone())
+
+            # save properly patched img if debug mode
+            if self.cfg.debug_mode:
+                p_img_pil_drawn = PatchTester.draw_bbox_on_pil_image(
+                    all_patch_preds[-1], p_img_pil, self.cfg.class_list)
+                p_img_pil_drawn.save(osp.join(self.cfg.log_dir, "val_patch_applied_imgs", img_name + ".jpg"))
+
+        # reorder labels to (Array[M, 5]), class, x1, y1, x2, y2
+        all_labels = torch.cat(all_labels)[:, [5, 0, 1, 2, 3]]
+        # patch and noise labels are of shapes (Array[N, 6]), x1, y1, x2, y2, conf, class
+        all_patch_preds = torch.cat(all_patch_preds)
+        asr_s, asr_m, asr_l, asr_a = PatchTester.calc_asr(
+            all_labels, all_patch_preds,
+            class_list=self.cfg.class_list, 
+            cls_id=cls_id)
+
+        print(f"Validation metrics for images with patches:")
+        print(f"\tASR@thres={conf_thresh}: asr_s={asr_s:.3f},  asr_m={asr_m:.3f},  asr_l={asr_l:.3f},  asr_a={asr_a:.3f}")
+
+        self.writer.add_scalar("val_asr_per_epoch/area_small", asr_s, epoch)
+        self.writer.add_scalar("val_asr_per_epoch/area_medium", asr_m, epoch)
+        self.writer.add_scalar("val_asr_per_epoch/area_large", asr_l, epoch)
+        self.writer.add_scalar("val_asr_per_epoch/area_all", asr_a, epoch)
 
 
 def main():

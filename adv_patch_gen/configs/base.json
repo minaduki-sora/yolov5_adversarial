@@ -1,6 +1,7 @@
 {
     "image_dir": "data/visdrone_data/Custom_4Class_labels_vehicles/VisDrone2019-DET-train/images",
     "label_dir": "data/visdrone_data/Custom_4Class_labels_vehicles/VisDrone2019-DET-train/labels",
+    "val_image_dir": "data/visdrone_data/Custom_4Class_labels_vehicles/VisDrone2019-DET-val/images",
     "use_even_odd_images": "all",
     "log_dir": "runs/train_adversarial",
     "tensorboard_port": 8994,
@@ -10,6 +11,7 @@
     "device": "cuda:0",
     "use_amp": true,
     "patch_name": "base",
+    "val_epoch_freq": 100,
     "patch_save_epoch_freq": 1,
     "model_in_sz": [
         640,
@@ -43,7 +45,8 @@
     "loss_target": "obj * cls",
     "<-------------->": "# comments below",
     "<use_even_odd_images>": "# (str), ('all', 'even', 'odd'): use images with even/odd numbers in the last char of their filenames",
-    "<patch_save_epoch_freq>": "(int): freq for saving patches. 1 means save every epoch",
+    "<val_epoch_freq>": "(int): epoch freq for running validation run. 1 means validate after every epoch", 
+    "<patch_save_epoch_freq>": "(int): freq for saving patches. 1 means save after every epoch",
     "<model_in_sz>": "# (int, int): model input height, width",
     "<patch_name>": "# (str): gray random, or path_to_init_patch",
     "<patch_size>": "# (int, int): must be (height, width)",
