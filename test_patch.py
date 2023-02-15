@@ -29,9 +29,8 @@ from utils.plots import Annotator, colors
 
 from adv_patch_gen.utils.config_parser import get_argparser, load_config_object
 from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
-from adv_patch_gen.utils.common import BColors
+from adv_patch_gen.utils.common import pad_to_square, BColors, IMG_EXTNS
 
-IMG_EXTNS = {".png", ".jpg", ".jpeg"}
 # optionally set seed for repeatability
 SEED = None
 if SEED is not None:
@@ -160,6 +159,21 @@ class PatchTester:
 
         return max(asr_small, 0.), max(asr_medium, 0.), max(asr_large, 0.), max(asr_all, 0.)
 
+    @staticmethod
+    def draw_bbox_on_pil_image(bbox: np.ndarray, padded_img: Image, class_list: List[str]) -> Image:
+        """
+        Draw bounding box on a PIL image and return said image after drawing
+        """
+        padded_img_np = np.ascontiguousarray(padded_img)
+        label_2_class = dict(enumerate(class_list))
+
+        annotator = Annotator(padded_img_np, line_width=1, example=str(label_2_class))
+        for *xyxy, conf, cls in bbox:
+            c = int(cls)  # integer class
+            label = f'{label_2_class[c]} {conf:.2f}'
+            annotator.box_label(xyxy, label, color=colors(c, True))
+        return Image.fromarray(padded_img_np)
+
     def _create_coco_image_annot(self, file_path: Path, width: int, height: int, image_id: int) -> dict:
         file_path = file_path.name
         image_annotation = {
@@ -169,20 +183,6 @@ class PatchTester:
             "id": image_id,
         }
         return image_annotation
-
-    def draw_bbox_on_pil_image(self, bbox: np.ndarray, padded_img: Image) -> Image:
-        """
-        Draw bounding box on a PIL image and return said image after drawing
-        """
-        padded_img_np = np.ascontiguousarray(padded_img)
-        label_2_class = dict(enumerate(self.cfg.class_list))
-
-        annotator = Annotator(padded_img_np, line_width=1, example=str(label_2_class))
-        for *xyxy, conf, cls in bbox:
-            c = int(cls)  # integer class
-            label = f'{label_2_class[c]} {conf:.2f}'
-            annotator.box_label(xyxy, label, color=colors(c, True))
-        return Image.fromarray(padded_img_np)
 
     def test(self,
              conf_thresh: float = 0.4,
@@ -281,31 +281,15 @@ class PatchTester:
             txtpath = osp.join(clean_txt_dir, txtname)
             # open image and adjust to yolo input size
             img = Image.open(imgfile).convert('RGB')
-            w, h = img.size
-
-            if w == h:
-                padded_img = img
-            else:
-                dim_to_pad = 1 if w < h else 2
-                if dim_to_pad == 1:
-                    padding = (h - w) / 2
-                    padded_img = Image.new(
-                        'RGB', (h, h), color=(127, 127, 127))
-                    padded_img.paste(img, (int(padding), 0))
-                else:
-                    padding = (w - h) / 2
-                    padded_img = Image.new(
-                        'RGB', (w, w), color=(127, 127, 127))
-                    padded_img.paste(img, (0, int(padding)))
-
+            padded_img = pad_to_square(img)
             padded_img = transforms.Resize(model_in_sz)(padded_img)
-            cleanname = img_name + ".png"
 
             #######################################
-            # generate labels for the patched image
+            # generate labels to use later for patched image
             padded_img_tensor = transforms.ToTensor()(padded_img).unsqueeze(0).to(self.dev)
-            pred = self.model(padded_img_tensor)
-            boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
+            with torch.no_grad():
+                pred = self.model(padded_img_tensor)
+                boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
             # if doing targeted class performance check, ignore non target classes
             if cls_id is not None:
                 boxes = boxes[boxes[:, -1] == cls_id]
@@ -343,9 +327,11 @@ class PatchTester:
                 textfile.close()
 
             # save img
+            cleanname = img_name + ".jpg"
             if save_image and save_orig_padded_image:
                 if draw_bbox_on_image:
-                    padded_img_drawn = self.draw_bbox_on_pil_image(all_labels[-1], padded_img)
+                    padded_img_drawn = PatchTester.draw_bbox_on_pil_image(
+                        all_labels[-1], padded_img, self.cfg.class_list)
                     padded_img_drawn.save(osp.join(clean_img_dir, cleanname))
                 else:
                     padded_img.save(osp.join(clean_img_dir, cleanname))
@@ -375,14 +361,15 @@ class PatchTester:
                 p_img = p_img_batch.squeeze(0)
                 p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
 
-            properpatchedname = img_name + ".png"
+            properpatchedname = img_name + ".jpg"
             # generate a label file for the image with sticker
-            txtname = properpatchedname.replace('.png', '.txt')
+            txtname = properpatchedname.replace('.jpg', '.txt')
             txtpath = osp.join(proper_txt_dir, txtname)
 
             padded_img_tensor = transforms.ToTensor()(p_img_pil).unsqueeze(0).to(self.dev)
-            pred = self.model(padded_img_tensor)
-            boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
+            with torch.no_grad():
+                pred = self.model(padded_img_tensor)
+                boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
             # if doing targeted class performance check, ignore non target classes
             if cls_id is not None:
                 boxes = boxes[boxes[:, -1] == cls_id]
@@ -410,7 +397,8 @@ class PatchTester:
             # save properly patched img
             if save_image:
                 if draw_bbox_on_image:
-                    p_img_pil_drawn = self.draw_bbox_on_pil_image(all_patch_preds[-1], p_img_pil)
+                    p_img_pil_drawn = PatchTester.draw_bbox_on_pil_image(
+                        all_patch_preds[-1], p_img_pil, self.cfg.class_list)
                     p_img_pil_drawn.save(osp.join(proper_img_dir, properpatchedname))
                 else:
                     p_img_pil.save(osp.join(proper_img_dir, properpatchedname))
@@ -425,14 +413,15 @@ class PatchTester:
             p_img = p_img_batch.squeeze(0)
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
 
-            randompatchedname = img_name + ".png"
+            randompatchedname = img_name + ".jpg"
             # generate a label file for the image with random patch
-            txtname = randompatchedname.replace('.png', '.txt')
+            txtname = randompatchedname.replace('.jpg', '.txt')
             txtpath = osp.join(random_txt_dir, txtname)
 
             padded_img_tensor = transforms.ToTensor()(p_img_pil).unsqueeze(0).to(self.dev)
-            pred = self.model(padded_img_tensor)
-            boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
+            with torch.no_grad():
+                pred = self.model(padded_img_tensor)
+                boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
             # if doing targeted class performance check, ignore non target classes
             if cls_id is not None:
                 boxes = boxes[boxes[:, -1] == cls_id]
@@ -460,7 +449,8 @@ class PatchTester:
             # save randomly patched img
             if save_image:
                 if draw_bbox_on_image:
-                    p_img_pil_drawn = self.draw_bbox_on_pil_image(all_noise_preds[-1], p_img_pil)
+                    p_img_pil_drawn = PatchTester.draw_bbox_on_pil_image(
+                        all_noise_preds[-1], p_img_pil, self.cfg.class_list)
                     p_img_pil_drawn.save(osp.join(random_img_dir, randompatchedname))
                 else:
                     p_img_pil.save(osp.join(random_img_dir, randompatchedname))
