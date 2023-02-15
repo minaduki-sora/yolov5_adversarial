@@ -16,12 +16,12 @@ def load_config_object(cfg_path: str) -> edict:
     return edict(cfg_dict)
 
 
-def get_argparser() -> argparse.ArgumentParser:
+def get_argparser(desc="Config file load for training adv patches") -> argparse.ArgumentParser:
     """
     Get parser with the default config argument
     """
     parser = argparse.ArgumentParser(
-        description="Config file load for training adv patches")
+        description=desc)
     parser.add_argument('--cfg', '--config', type=str, dest="config", default="adv_patch_gen/configs/base.json",
                         help='Path to config file to use for adv patch generation (default: %(default)s)')
     return parser
