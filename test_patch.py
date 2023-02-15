@@ -230,7 +230,7 @@ class PatchTester:
         proper_txt_dir = osp.join(self.cfg.savedir, 'proper_patched/', 'labels/')
         random_img_dir = osp.join(self.cfg.savedir, 'random_patched/', 'images/')
         random_txt_dir = osp.join(self.cfg.savedir, 'random_patched/', 'labels/')
-        jsondir = osp.join(self.cfg.savedir, 'jsons')
+        jsondir = osp.join(self.cfg.savedir, 'results_json')
 
         print(f"Saving all outputs to {self.cfg.savedir}")
         dirs_to_create = [jsondir]
@@ -243,9 +243,13 @@ class PatchTester:
         for directory in dirs_to_create:
             os.makedirs(directory, exist_ok=True)
 
-        # dump cfg json file
-        with open(os.path.join(jsondir, "cfg.json"), 'w', encoding='utf-8') as f_json:
+        # dump cfg json file to self.cfg.savedir
+        with open(osp.join(self.cfg.savedir, "cfg.json"), 'w', encoding='utf-8') as f_json:
             json.dump(self.cfg, f_json, ensure_ascii=False, indent=4)
+
+        # save patch to self.cfg.savedir
+        patch_save_path = osp.join(self.cfg.savedir, self.cfg.patchfile.split('/')[-1])
+        transforms.ToPILImage('RGB')(adv_patch_cpu).save(patch_save_path)
 
         img_paths = glob.glob(osp.join(self.cfg.imgdir, "*"))
         img_paths = sorted(
@@ -542,10 +546,13 @@ class PatchTester:
 
 
 def main():
-    parser = get_argparser()
+    parser = get_argparser(desc="Test patches on a directory with images. Params from argparse take precedence over those from config")
+    parser.add_argument('--dev', type=str,
+                        dest="device", default=None, required=False,
+                        help='Device to use (i.e. cpu, cuda:0, cuda:1). If absent, use "device" from cfg json (default: %(default)s)')
     parser.add_argument('-w', '--weights', type=str,
                         dest="weights", default=None, required=False,
-                        help='Path to yolov5 model wt file. If not provided, the model path from the cfg json is used (default: %(default)s)')
+                        help='Path to yolov5 model wt file. If absent, use "weights_file" model path from cfg json (default: %(default)s)')
     parser.add_argument('-p', '--patchfile', type=str,
                         dest="patchfile", default=None, required=True,
                         help='Path to patch image file for testing (default: %(default)s)')
@@ -570,6 +577,7 @@ def main():
 
     args = parser.parse_args()
     cfg = load_config_object(args.config)
+    cfg.device = args.device if args.device is not None else cfg.device 
     cfg.weights_file = args.weights if args.weights is not None else cfg.weights_file  # check if cfg.weights_file is ignored
     cfg.patchfile = args.patchfile
     cfg.imgdir = args.imgdir
