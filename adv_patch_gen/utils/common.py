@@ -2,6 +2,13 @@
 Common utils
 """
 import socket
+from typing import Tuple, Union
+
+import numpy as np
+from PIL import Image
+
+
+IMG_EXTNS = {".png", ".jpg", ".jpeg"}
 
 
 class BColors:
@@ -27,3 +34,33 @@ def is_port_in_use(port: int) -> bool:
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as stream:
         return stream.connect_ex(('localhost', int(port))) == 0
+
+
+def pad_to_square(img: Image, pad_rgb: Tuple[int, int, int] = (127, 127, 127)) -> Image:
+    """
+    Pads a PIL image to a square with pad_rgb values to the longest side
+    """
+    w, h = img.size
+    if w == h:
+        padded_img = img
+    else:
+        if w < h:
+            padding = (h - w) / 2
+            padded_img = Image.new(
+                'RGB', (h, h), color=pad_rgb)
+            padded_img.paste(img, (int(padding), 0))
+        else:
+            padding = (w - h) / 2
+            padded_img = Image.new(
+                'RGB', (w, w), color=pad_rgb)
+            padded_img.paste(img, (0, int(padding)))
+    return padded_img
+
+
+def calc_mean_and_std_err(arr: Union[list, np.ndarray]) -> Tuple[float, float]:
+    """"
+    Calculate mean and standard error
+    """
+    mean = np.mean(arr)
+    std_err = np.std(arr, ddof=1) / np.sqrt(len(arr))
+    return mean, std_err

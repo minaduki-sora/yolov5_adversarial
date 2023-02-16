@@ -9,7 +9,7 @@ import json
 import glob
 import random
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from contextlib import redirect_stdout
 
 import tqdm
@@ -29,7 +29,7 @@ from utils.plots import Annotator, colors
 
 from adv_patch_gen.utils.config_parser import get_argparser, load_config_object
 from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
-from adv_patch_gen.utils.common import pad_to_square, BColors, IMG_EXTNS
+from adv_patch_gen.utils.common import calc_mean_and_std_err, pad_to_square, BColors, IMG_EXTNS
 
 # optionally set seed for repeatability
 SEED = None
@@ -41,11 +41,10 @@ if SEED is not None:
 torch.backends.cudnn.benchmark = False
 
 
-def eval_coco_metrics(anno_json: str, pred_json: str, txt_save_path: str) -> np.ndarray:
+def eval_coco_metrics(anno_json: str, pred_json: str, txt_save_path: str, w_mode: str = 'a') -> np.ndarray:
     """
     Compare and eval pred json producing coco metrics
     """
-
     anno = COCO(anno_json)  # init annotations api
     pred = anno.loadRes(pred_json)  # init predictions api
     evaluator = COCOeval(anno, pred, 'bbox')
@@ -59,7 +58,7 @@ def eval_coco_metrics(anno_json: str, pred_json: str, txt_save_path: str) -> np.
     with redirect_stdout(std_out):
         evaluator.summarize()
     eval_stats = std_out.getvalue()
-    with open(txt_save_path, 'w', encoding="utf-8") as fwriter:
+    with open(txt_save_path, w_mode, encoding="utf-8") as fwriter:
         fwriter.write(eval_stats)
     return evaluator.stats
 
@@ -87,7 +86,7 @@ class PatchTester:
         lo_area: float = 20**2,
         hi_area: float = 67**2,
         cls_id: Optional[int] = None,
-        class_agnostic: bool = False) -> float:
+        class_agnostic: bool = False) -> Tuple[float, float, float, float]:
         """
         Calculate attack success rate (How many bounding boxes were hidden from the detector)
         for all predictions and for different bbox areas.
@@ -193,7 +192,7 @@ class PatchTester:
              draw_bbox_on_image: bool = True,
              class_agnostic: bool = False,
              cls_id: Optional[int] = None,
-             max_images: int = 100000) -> None:
+             max_images: int = 100000) -> dict:
         """
         Initiate test for properly, randomly and no-patched images
         Args:
@@ -206,6 +205,8 @@ class PatchTester:
             class_agnostic: all classes are teated the same. Use when only evaluating for obj det & not classification
             cls_id: filtering for a specific class for evaluation only
             max_images: max number of images to evaluate from inside imgdir
+        Returns:
+            dict of patch and noise coco_map and asr results
         """
         t0 = time.time()
 
@@ -504,7 +505,7 @@ class PatchTester:
         eval_coco_metrics(clean_gt_json, clean_json, clean_txt_path)
 
         print(f"{BColors.HEADER}### Metrics for images with correct patches ###{BColors.ENDC}")
-        eval_coco_metrics(clean_gt_json, patch_json, patch_txt_path)
+        coco_map_patch = eval_coco_metrics(clean_gt_json, patch_json, patch_txt_path)
 
         asr_s, asr_m, asr_l, asr_a = PatchTester.calc_asr(
             all_labels, all_patch_preds, self.cfg.class_list, cls_id=cls_id, class_agnostic=class_agnostic)
@@ -515,10 +516,11 @@ class PatchTester:
             asr_str += f" Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area= large | = {asr_l:.3f}\n"
             asr_str += f" Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area=   all | = {asr_a:.3f}\n"
             print(asr_str)
-            f_patch.write(asr_str)
+            f_patch.write(asr_str + "\n")
+        metrics_patch = {"coco_map": coco_map_patch, "asr": [asr_s, asr_m, asr_l, asr_a]}
 
         print(f"{BColors.HEADER}### Metrics for images with random noise patches ###{BColors.ENDC}")
-        eval_coco_metrics(clean_gt_json, noise_json, noise_txt_path)
+        coco_map_noise = eval_coco_metrics(clean_gt_json, noise_json, noise_txt_path)
 
         asr_s, asr_m, asr_l, asr_a = PatchTester.calc_asr(
             all_labels, all_noise_preds, self.cfg.class_list, cls_id=cls_id, class_agnostic=class_agnostic)
@@ -529,10 +531,65 @@ class PatchTester:
             asr_str += f" Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area= large | = {asr_l:.3f}\n"
             asr_str += f" Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area=   all | = {asr_a:.3f}\n"
             print(asr_str)
-            f_noise.write(asr_str)
+            f_noise.write(asr_str + "\n")
+        metrics_noise = {"coco_map": coco_map_noise, "asr": [asr_s, asr_m, asr_l, asr_a]}
 
         tf = time.time()
         print(f" Time to compute proper patched results = {tf - t0} seconds")
+        return {"patch": metrics_patch, "noise": metrics_noise}
+
+    def study(self,
+              n_experiments: int = 5,
+              conf_thresh: float = 0.4,
+              nms_thresh: float = 0.4,
+              save_txt: bool = False,
+              save_image: bool = False,
+              save_orig_padded_image: bool = True,
+              draw_bbox_on_image: bool = True,
+              class_agnostic: bool = False,
+              cls_id: Optional[int] = None,
+              max_images: int = 100000) -> None:
+        """
+        Generates metrics for n_experiments and calculates the mean metrics along with the ± std error
+        """
+        assert n_experiments > 0
+        patch_metrics, noise_metrics = [], []
+        for n in range(n_experiments):
+            metrics = self.test(
+                conf_thresh, nms_thresh, save_txt, save_image,
+                save_orig_padded_image, draw_bbox_on_image,
+                class_agnostic, cls_id, max_images)
+            patch_metrics.append(list(metrics["patch"]["coco_map"]) + metrics["patch"]["asr"])
+            noise_metrics.append(list(metrics["noise"]["coco_map"]) + metrics["noise"]["asr"])
+        
+        patch_metrics, noise_metrics = np.asarray(patch_metrics), np.asarray(noise_metrics)
+        patch_metrics_with_err = [calc_mean_and_std_err(patch_metrics[:, i]) for i in range(len(patch_metrics[0]))]
+        noise_metrics_with_err = [calc_mean_and_std_err(noise_metrics[:, i]) for i in range(len(noise_metrics[0]))]
+
+        def _metric_fmt(mean_std_err: Tuple[float, float], sdigit: int = 3) -> str:
+            mean, std_err = mean_std_err
+            return f"{round(mean, sdigit)} ± {round(std_err, sdigit)}"
+
+        patch_txt_path = osp.join(self.cfg.savedir, 'patch_map_stats_with_std_err.txt')
+        noise_txt_path = osp.join(self.cfg.savedir, 'noise_map_stats_with_std_err.txt')
+        for txtpath, metrics in zip([patch_txt_path, noise_txt_path], [patch_metrics_with_err, noise_metrics_with_err]):
+            with open(txtpath, 'w', encoding="utf-8") as f_ptr:
+                f_ptr.write(f"Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = {_metric_fmt(metrics[0])}\n")
+                f_ptr.write(f"Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = {_metric_fmt(metrics[1])}\n")
+                f_ptr.write(f"Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = {_metric_fmt(metrics[2])}\n")
+                f_ptr.write(f"Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = {_metric_fmt(metrics[3])}\n")
+                f_ptr.write(f"Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = {_metric_fmt(metrics[4])}\n")
+                f_ptr.write(f"Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = {_metric_fmt(metrics[5])}\n")
+                f_ptr.write(f"Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = {_metric_fmt(metrics[6])}\n")
+                f_ptr.write(f"Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = {_metric_fmt(metrics[7])}\n")
+                f_ptr.write(f"Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = {_metric_fmt(metrics[8])}\n")
+                f_ptr.write(f"Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = {_metric_fmt(metrics[9])}\n")
+                f_ptr.write(f"Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = {_metric_fmt(metrics[10])}\n")
+                f_ptr.write(f"Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = {_metric_fmt(metrics[11])}\n")
+                f_ptr.write(f"Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area= small | = {_metric_fmt(metrics[12])}\n")
+                f_ptr.write(f"Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area=medium | = {_metric_fmt(metrics[13])}\n")
+                f_ptr.write(f"Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area= large | = {_metric_fmt(metrics[14])}\n")
+                f_ptr.write(f"Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area=   all | = {_metric_fmt(metrics[15])}\n")
 
 
 def main():
@@ -564,10 +621,13 @@ def main():
     parser.add_argument('--target-class', type=int,
                         dest="target_class", default=None, required=False,
                         help='Target specific class with id for misclassification test (default: %(default)s)')
+    parser.add_argument('--study',
+                        dest="study", action='store_true',
+                        help='Runs test over N times calculating the mean metrics with std error uncertainty')
 
     args = parser.parse_args()
     cfg = load_config_object(args.config)
-    cfg.device = args.device if args.device is not None else cfg.device 
+    cfg.device = args.device if args.device is not None else cfg.device
     cfg.weights_file = args.weights if args.weights is not None else cfg.weights_file  # check if cfg.weights_file is ignored
     cfg.patchfile = args.patchfile
     cfg.imgdir = args.imgdir
@@ -584,7 +644,8 @@ def main():
 
     print(f"{BColors.OKBLUE} Test Arguments: {args} {BColors.ENDC}")
     tester = PatchTester(cfg)
-    tester.test(save_txt=args.savetxt, save_image=args.saveimg, class_agnostic=args.class_agnostic, cls_id=args.target_class)
+    test_func = tester.study if args.study else tester.test
+    test_func(save_txt=args.savetxt, save_image=args.saveimg, class_agnostic=args.class_agnostic, cls_id=args.target_class)
 
 
 if __name__ == '__main__':
