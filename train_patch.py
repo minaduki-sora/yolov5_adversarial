@@ -181,7 +181,7 @@ class PatchTrainer:
             optimizer, 'min', patience=50)
 
         start_time = time.time()
-        for epoch in range(self.cfg.n_epochs):
+        for epoch in range(1, self.cfg.n_epochs + 1):
             out_patch_path = osp.join(
                 patch_dir, f"{self.cfg.patch_name}_epoch_{epoch}.jpg")
             ep_loss = 0
