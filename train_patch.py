@@ -257,7 +257,7 @@ class PatchTrainer:
                 # torch.cuda.empty_cache()  # note emptying cache adds too much overhead
             
             # run validation to calc asr on val set if self.val_dir is not None
-            if self.cfg.val_image_dir is not None and epoch % self.cfg.val_epoch_freq == 0:
+            if all([self.cfg.val_image_dir, self.cfg.val_epoch_freq]) and epoch % self.cfg.val_epoch_freq == 0:
                 with torch.no_grad():
                     self.val(epoch, out_patch_path)
         print(f"Total training time {time.time() - start_time:.2f}s")
@@ -367,6 +367,8 @@ class PatchTrainer:
         self.writer.add_scalar("val_asr_per_epoch/area_medium", asr_m, epoch)
         self.writer.add_scalar("val_asr_per_epoch/area_large", asr_l, epoch)
         self.writer.add_scalar("val_asr_per_epoch/area_all", asr_a, epoch)
+        del adv_batch_t, p_img_batch
+        torch.cuda.empty_cache() 
 
 
 def main():
