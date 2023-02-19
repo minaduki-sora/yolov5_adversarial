@@ -61,8 +61,8 @@ class SaliencyLoss(nn.Module):
         rg = r - g
         yb = 0.5 * (r + g) - b
 
-        mu_rg, sigma_rg = torch.mean(rg), torch.std(rg)
-        mu_yb, sigma_yb = torch.mean(yb), torch.std(yb)
+        mu_rg, sigma_rg = torch.mean(rg) + 1e-8, torch.std(rg) + 1e-8
+        mu_yb, sigma_yb = torch.mean(yb) + 1e-8, torch.std(yb) + 1e-8
         sl = torch.sqrt(sigma_rg**2 + sigma_yb**2) + \
             (0.3 * torch.sqrt(mu_rg**2 + mu_yb**2))
         return sl / torch.numel(adv_patch)
