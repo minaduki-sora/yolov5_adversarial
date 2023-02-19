@@ -53,6 +53,7 @@ class PatchTrainer:
     """
 
     def __init__(self, cfg: edict):
+        self.cfg = cfg
         self.dev = select_device(cfg.device)
 
         model = DetectMultiBackend(cfg.weights_file, device=self.dev, dnn=False, data=None, fp16=False)
@@ -76,7 +77,6 @@ class PatchTrainer:
         for cfg_key, cfg_val in cfg.items():
             self.writer.add_text(cfg_key, str(cfg_val))
 
-        cfg.val_image_dir = cfg.val_image_dir if "val_image_dir" in cfg else None
         # load training dataset
         self.train_loader = torch.utils.data.DataLoader(
             YOLODataset(cfg.image_dir,
@@ -90,7 +90,6 @@ class PatchTrainer:
             num_workers=10,
             pin_memory=True if self.dev.type == "cuda" else False)
         self.epoch_length = len(self.train_loader)
-        self.cfg = cfg
 
     def init_tensorboard(self, log_dir: str = None, port: int = 6006, run_tb=True):
         """
