@@ -74,8 +74,7 @@ class PatchTrainer:
         self.writer = self.init_tensorboard(cfg.log_dir, cfg.tensorboard_port)
         # save config parameters to tensorboard logs
         for cfg_key, cfg_val in cfg.items():
-            if not(cfg_key[0] == '<' and cfg_key[-1] == '>'):  # don't add comments to tb log
-                self.writer.add_text(cfg_key, str(cfg_val))
+            self.writer.add_text(cfg_key, str(cfg_val))
 
         cfg.val_image_dir = cfg.val_image_dir if "val_image_dir" in cfg else None
         # load training dataset
@@ -211,14 +210,16 @@ class PatchTrainer:
                     with autocast() if self.cfg.use_amp else nullcontext():
                         output = self.model(p_img_batch)[0]
                         max_prob = self.prob_extractor(output)
+                        sal = self.sal_loss(adv_patch) if self.cfg.sal_mult != 0 else torch.tensor([0], device=self.dev)
                         nps = self.nps_loss(adv_patch) if self.cfg.nps_mult != 0 else torch.tensor([0], device=self.dev)
                         tv = self.tv_loss(adv_patch) if self.cfg.tv_mult != 0 else torch.tensor([0], device=self.dev)
 
+                    det_loss = torch.mean(max_prob)
+                    sal_loss = sal * self.cfg.sal_mult
                     nps_loss = nps * self.cfg.nps_mult
                     tv_loss = torch.max(tv * self.cfg.tv_mult, min_tv_loss)
-                    det_loss = torch.mean(max_prob)
 
-                    loss = det_loss + nps_loss + tv_loss
+                    loss = det_loss + sal_loss + nps_loss + tv_loss
                     ep_loss += loss
 
                     loss.backward()
@@ -234,6 +235,8 @@ class PatchTrainer:
                         self.writer.add_scalar(
                             "loss/det_loss", det_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar(
+                            "loss/sal_loss", sal_loss.detach().cpu().numpy(), iteration)
+                        self.writer.add_scalar(
                             "loss/nps_loss", nps_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar(
                             "loss/tv_loss", tv_loss.detach().cpu().numpy(), iteration)
@@ -244,7 +247,7 @@ class PatchTrainer:
                         self.writer.add_image(
                             "patch", adv_patch_cpu, iteration)
                     if i_batch + 1 < len(self.train_loader):
-                        del adv_batch_t, output, max_prob, det_loss, p_img_batch, nps_loss, tv_loss, loss
+                        del adv_batch_t, output, max_prob, det_loss, p_img_batch, sal_loss, nps_loss, tv_loss, loss
                         # torch.cuda.empty_cache()  # note emptying cache adds too much overhead
             ep_loss = ep_loss / len(self.train_loader)
             scheduler.step(ep_loss)
@@ -253,7 +256,7 @@ class PatchTrainer:
             if epoch % self.cfg.patch_save_epoch_freq == 0:
                 img = transforms.ToPILImage('RGB')(adv_patch_cpu)
                 img.save(out_patch_path)
-                del adv_batch_t, output, max_prob, det_loss, p_img_batch, nps_loss, tv_loss, loss
+                del adv_batch_t, output, max_prob, det_loss, p_img_batch, sal_loss, nps_loss, tv_loss, loss
                 # torch.cuda.empty_cache()  # note emptying cache adds too much overhead
             
             # run validation to calc asr on val set if self.val_dir is not None
