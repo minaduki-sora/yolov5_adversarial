@@ -42,18 +42,5 @@
     "nps_mult": 0.01,
     "batch_size": 8,
     "debug_mode": false,
-    "loss_target": "obj * cls",
-    "<-------------->": "# comments below",
-    "<use_even_odd_images>": "# (str), ('all', 'even', 'odd'): use images with even/odd numbers in the last char of their filenames",
-    "<val_epoch_freq>": "(int): epoch freq for running validation run. 1 means validate after every epoch", 
-    "<patch_save_epoch_freq>": "(int): freq for saving patches. 1 means save after every epoch",
-    "<model_in_sz>": "# (int, int): model input height, width",
-    "<patch_name>": "# (str): gray random, or path_to_init_patch",
-    "<patch_size>": "# (int, int): must be (height, width)",
-    "<objective_class_id>": "# (int): class id to target for adv attack. Use null for general attack for all classes",
-    "<rotate_patches>": "# (bool): rotate patches or not",
-    "<transform_patches>": "# (bool): add bightness, contrast and noise transforms to patches or not",
-    "<device>": "# (str): 'cpu' or 'cuda' or 'cuda:0,1,2,3'",
-    "<debug_mode>": "# (bool): if yes, images with adv drawn saved during each batch",
-    "<loss_target>": "# (str): 'obj', 'cls', 'obj * cls'"
+    "loss_target": "obj * cls"
 }
