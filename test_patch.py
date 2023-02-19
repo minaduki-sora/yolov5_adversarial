@@ -456,6 +456,9 @@ class PatchTester:
                 else:
                     p_img_pil.save(osp.join(random_img_dir, randompatchedname))
 
+        del adv_batch_t, p_img_batch
+        torch.cuda.empty_cache()
+
         # reorder labels to (Array[M, 5]), class, x1, y1, x2, y2
         all_labels = torch.cat(all_labels)[:, [5, 0, 1, 2, 3]]
         # patch and noise labels are of shapes (Array[N, 6]), x1, y1, x2, y2, conf, class
