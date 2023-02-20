@@ -26,6 +26,7 @@ class YOLODataset(Dataset):
         max_labels: max number labels to use for each image
         model_in_sz: model input image size (height, width)
         use_even_odd_images: optionally load a data subset based on the last numeric char of the img filename [all, even, odd]
+        filter_class_id: np.ndarray class id(s) to get. Set None to get all classes
         shuffle: Whether or not to shuffle the dataset.
     """
 
@@ -35,6 +36,7 @@ class YOLODataset(Dataset):
                  max_labels: int,
                  model_in_sz: Tuple[int, int],
                  use_even_odd_images: str = "all",
+                 filter_class_ids: Optional[np.array] = None,
                  shuffle: bool = True):
         assert use_even_odd_images in {"all", "even", "odd"}, "use_even_odd param can only be all, even or odd"
         image_paths = glob.glob(osp.join(image_dir, "*"))
@@ -61,6 +63,7 @@ class YOLODataset(Dataset):
         self.model_in_sz = model_in_sz
         self.shuffle = shuffle
         self.max_n_labels = max_labels
+        self.filter_class_ids = np.asarray(filter_class_ids) if filter_class_ids is not None else None
 
     def __len__(self):
         return len(self.image_paths)
@@ -76,6 +79,10 @@ class YOLODataset(Dataset):
             label = np.expand_dims(label, axis=0)
         # sort in reverse by bbox area
         label = np.asarray(sorted(label, key=lambda annot: -annot[3] * annot[4]))
+        # selectively get classes if filter_class_ids is not None
+        if self.filter_class_ids is not None:
+            label = label[np.isin(label[:, 0], self.filter_class_ids)]
+            label = label if len(label) > 0 else np.ones([1, 5])
 
         label = torch.from_numpy(label).float()
         image, label = self.pad_and_scale(image, label)

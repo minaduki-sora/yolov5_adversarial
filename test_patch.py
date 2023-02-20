@@ -643,6 +643,7 @@ def main():
     else:
         savename += (f'_tc{args.target_class}' if args.target_class is not None else '')
     savename += ('_agnostic' if args.class_agnostic else '')
+    savename += ('_study' if args.study else '')
     cfg.savedir = osp.join(args.savedir, savename)
 
     print(f"{BColors.OKBLUE} Test Arguments: {args} {BColors.ENDC}")
