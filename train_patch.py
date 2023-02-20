@@ -84,6 +84,7 @@ class PatchTrainer:
                         cfg.max_labels,
                         cfg.model_in_sz,
                         cfg.use_even_odd_images,
+                        filter_class_ids=cfg.objective_class_id,
                         shuffle=True),
             batch_size=cfg.batch_size,
             shuffle=True,
@@ -180,8 +181,7 @@ class PatchTrainer:
 
         start_time = time.time()
         for epoch in range(1, self.cfg.n_epochs + 1):
-            out_patch_path = osp.join(
-                patch_dir, f"{self.cfg.patch_name}_epoch_{epoch}.jpg")
+            out_patch_path = osp.join(patch_dir, f"{self.cfg.patch_name}_epoch_{epoch}.png")
             ep_loss = 0
             min_tv_loss = torch.tensor(self.cfg.min_tv_loss).to(self.dev)
 
@@ -202,7 +202,7 @@ class PatchTrainer:
                         p_img_batch, (self.cfg.model_in_sz[0], self.cfg.model_in_sz[1]))
 
                     if self.cfg.debug_mode:
-                        img = p_img_batch[1, :, :, ]
+                        img = p_img_batch[0, :, :, ]
                         img = transforms.ToPILImage()(img.detach().cpu())
                         img.save(osp.join(self.cfg.log_dir, "train_patch_applied_imgs", f"b_{i_batch}.jpg"))
 
