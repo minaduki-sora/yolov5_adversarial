@@ -192,6 +192,7 @@ class PatchTester:
              draw_bbox_on_image: bool = True,
              class_agnostic: bool = False,
              cls_id: Optional[int] = None,
+             min_pixel_area: Optional[int] = None,
              max_images: int = 100000) -> dict:
         """
         Initiate test for properly, randomly and no-patched images
@@ -204,6 +205,7 @@ class PatchTester:
             draw_bbox_on_image: Draw bboxes on the original images and the random noise & properly patched images
             class_agnostic: all classes are teated the same. Use when only evaluating for obj det & not classification
             cls_id: filtering for a specific class for evaluation only
+            min_pixel_area: all bounding boxes having area less than this are filtered out during testing. if None, use all boxes
             max_images: max number of images to evaluate from inside imgdir
         Returns:
             dict of patch and noise coco_map and asr results
@@ -294,6 +296,9 @@ class PatchTester:
             # if doing targeted class performance check, ignore non target classes
             if cls_id is not None:
                 boxes = boxes[boxes[:, -1] == cls_id]
+            # filter det bounding boxes by pixel area
+            if min_pixel_area is not None:
+                boxes = boxes[((boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])) > min_pixel_area]
             all_labels.append(boxes.clone())
             boxes = xyxy2xywh(boxes)
 
@@ -374,6 +379,9 @@ class PatchTester:
             # if doing targeted class performance check, ignore non target classes
             if cls_id is not None:
                 boxes = boxes[boxes[:, -1] == cls_id]
+            # filter det bounding boxes by pixel area
+            if min_pixel_area is not None:
+                boxes = boxes[((boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])) > min_pixel_area]
             all_patch_preds.append(boxes.clone())
             boxes = xyxy2xywh(boxes)
 
@@ -426,6 +434,9 @@ class PatchTester:
             # if doing targeted class performance check, ignore non target classes
             if cls_id is not None:
                 boxes = boxes[boxes[:, -1] == cls_id]
+            # filter det bounding boxes by pixel area
+            if min_pixel_area is not None:
+                boxes = boxes[((boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])) > min_pixel_area]
             all_noise_preds.append(boxes.clone())
             boxes = xyxy2xywh(boxes)
 
@@ -551,6 +562,7 @@ class PatchTester:
               draw_bbox_on_image: bool = True,
               class_agnostic: bool = False,
               cls_id: Optional[int] = None,
+              min_pixel_area: Optional[int] = None,
               max_images: int = 100000) -> None:
         """
         Generates metrics for n_experiments and calculates the mean metrics along with the ± std error
@@ -561,7 +573,7 @@ class PatchTester:
             metrics = self.test(
                 conf_thresh, nms_thresh, save_txt, save_image,
                 save_orig_padded_image, draw_bbox_on_image,
-                class_agnostic, cls_id, max_images)
+                class_agnostic, cls_id, min_pixel_area, max_images)
             patch_metrics.append(list(metrics["patch"]["coco_map"]) + metrics["patch"]["asr"])
             noise_metrics.append(list(metrics["noise"]["coco_map"]) + metrics["noise"]["asr"])
         
@@ -624,6 +636,9 @@ def main():
     parser.add_argument('--target-class', type=int,
                         dest="target_class", default=None, required=False,
                         help='Target specific class with id for misclassification test (default: %(default)s)')
+    parser.add_argument('--min-pixel-area', type=int,
+                        dest="min_pixel_area", default=None, required=False,
+                        help='all bboxes having area < this are filtered out during testing. if None, use all boxes (default: %(default)s)')
     parser.add_argument('--study',
                         dest="study", action='store_true',
                         help='Runs test over N times calculating the mean metrics with std error uncertainty')
@@ -649,7 +664,8 @@ def main():
     print(f"{BColors.OKBLUE} Test Arguments: {args} {BColors.ENDC}")
     tester = PatchTester(cfg)
     test_func = tester.study if args.study else tester.test
-    test_func(save_txt=args.savetxt, save_image=args.saveimg, class_agnostic=args.class_agnostic, cls_id=args.target_class)
+    test_func(save_txt=args.savetxt, save_image=args.saveimg, class_agnostic=args.class_agnostic,
+              cls_id=args.target_class, min_pixel_area=args.min_pixel_area)
 
 
 if __name__ == '__main__':
