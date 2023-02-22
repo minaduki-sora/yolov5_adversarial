@@ -30,6 +30,7 @@ from utils.plots import Annotator, colors
 from adv_patch_gen.utils.config_parser import get_argparser, load_config_object
 from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
 from adv_patch_gen.utils.common import calc_mean_and_std_err, pad_to_square, BColors, IMG_EXTNS
+from adv_patch_gen.utils.video import ffmpeg_create_video_from_image_dir, ffmpeg_combine_two_vids, ffmpeg_combine_three_vids
 
 # optionally set seed for repeatability
 SEED = None
@@ -193,6 +194,7 @@ class PatchTester:
              class_agnostic: bool = False,
              cls_id: Optional[int] = None,
              min_pixel_area: Optional[int] = None,
+             save_video: bool = False,
              max_images: int = 100000) -> dict:
         """
         Initiate test for properly, randomly and no-patched images
@@ -206,6 +208,7 @@ class PatchTester:
             class_agnostic: all classes are teated the same. Use when only evaluating for obj det & not classification
             cls_id: filtering for a specific class for evaluation only
             min_pixel_area: all bounding boxes having area less than this are filtered out during testing. if None, use all boxes
+            save_video: if set to true, eval videos are saved in directory videos
             max_images: max number of images to evaluate from inside imgdir
         Returns:
             dict of patch and noise coco_map and asr results
@@ -234,6 +237,7 @@ class PatchTester:
         random_img_dir = osp.join(self.cfg.savedir, 'random_patched/', 'images/')
         random_txt_dir = osp.join(self.cfg.savedir, 'random_patched/', 'labels/')
         jsondir = osp.join(self.cfg.savedir, 'results_json')
+        video_dir = osp.join(self.cfg.savedir, "videos")
 
         print(f"Saving all outputs to {self.cfg.savedir}")
         dirs_to_create = [jsondir]
@@ -243,6 +247,8 @@ class PatchTester:
             dirs_to_create.extend([proper_img_dir, random_img_dir])
         if save_image and save_orig_padded_image:
             dirs_to_create.append(clean_img_dir)
+        if save_image and save_video:
+            dirs_to_create.append(video_dir)
         for directory in dirs_to_create:
             os.makedirs(directory, exist_ok=True)
 
@@ -267,6 +273,7 @@ class PatchTester:
         all_labels = []
         all_patch_preds = []
         all_noise_preds = []
+        det_boxes = dropped_boxes = 0
 
         #### iterate through all images ####
         box_id = 0
@@ -296,9 +303,12 @@ class PatchTester:
             # if doing targeted class performance check, ignore non target classes
             if cls_id is not None:
                 boxes = boxes[boxes[:, -1] == cls_id]
+            count_before_drop = boxes.shape[0]
+            det_boxes += count_before_drop
             # filter det bounding boxes by pixel area
             if min_pixel_area is not None:
                 boxes = boxes[((boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])) > min_pixel_area]
+            dropped_boxes += count_before_drop - boxes.shape[0]
             all_labels.append(boxes.clone())
             boxes = xyxy2xywh(boxes)
 
@@ -548,8 +558,25 @@ class PatchTester:
             f_noise.write(asr_str + "\n")
         metrics_noise = {"coco_map": coco_map_noise, "asr": [asr_s, asr_m, asr_l, asr_a]}
 
+        if save_image and save_video:
+            patch_vid = osp.join(video_dir, "patch.mp4")
+            random_vid = osp.join(video_dir, "random.mp4")
+            clean_vid = osp.join(video_dir, "clean.mp4")
+            ffmpeg_create_video_from_image_dir(proper_img_dir, patch_vid)
+            ffmpeg_create_video_from_image_dir(random_img_dir, random_vid)
+            ffmpeg_create_video_from_image_dir(clean_img_dir, clean_vid)
+            ffmpeg_combine_two_vids(clean_vid, patch_vid, osp.join(video_dir, "clean_patch.mp4"))
+            ffmpeg_combine_two_vids(clean_vid, random_vid, osp.join(video_dir, "clean_random.mp4"))
+            ffmpeg_combine_three_vids(clean_vid, random_vid, patch_vid, osp.join(video_dir, "clean_random_patch.mp4"))
+
+        if min_pixel_area:
+            dperc = 100*dropped_boxes/det_boxes
+            drop_str = f" Det Boxes: {det_boxes} | Dropped Boxes: {dropped_boxes} | Dropped: {dperc:.2f}% @gt{min_pixel_area} px\n"
+            print(drop_str)
+            with open(clean_txt_path, 'a', encoding="utf-8") as fwriter:
+                fwriter.write(drop_str)
         tf = time.time()
-        print(f" Time to compute proper patched results = {tf - t0} seconds")
+        print(f" Time to complete evaluation = {tf - t0} seconds")
         return {"patch": metrics_patch, "noise": metrics_noise}
 
     def study(self,
@@ -573,7 +600,8 @@ class PatchTester:
             metrics = self.test(
                 conf_thresh, nms_thresh, save_txt, save_image,
                 save_orig_padded_image, draw_bbox_on_image,
-                class_agnostic, cls_id, min_pixel_area, max_images)
+                class_agnostic, cls_id, min_pixel_area,
+                save_video=False, max_images=max_images)
             patch_metrics.append(list(metrics["patch"]["coco_map"]) + metrics["patch"]["asr"])
             noise_metrics.append(list(metrics["noise"]["coco_map"]) + metrics["noise"]["asr"])
         
@@ -630,6 +658,9 @@ def main():
     parser.add_argument('--save-img',
                         dest="saveimg", action='store_true',
                         help='Save images with patches for later inspection')
+    parser.add_argument('--save-vid',
+                        dest="savevideo", action='store_true',
+                        help='Combine no-patch, random-patch and proper-patched images into videos')
     parser.add_argument('--class-agnostic',
                         dest="class_agnostic", action='store_true',
                         help='All classes are teated the same. Use when only evaluating for obj det & not classification')
@@ -650,6 +681,8 @@ def main():
     cfg.patchfile = args.patchfile
     cfg.imgdir = args.imgdir
 
+    if args.savevideo and not args.saveimg:
+        raise ValueError(f"To save videos, images must also be saved pass both --save-img & --save-vid flags")
     savename = f'{time.strftime("%Y%m%d-%H%M%S")}_' + cfg.patch_name
     if args.class_agnostic and args.target_class is not None:
         print(f"""{BColors.WARNING}WARNING:{BColors.ENDC} target_class and class_agnostic are both set.
@@ -665,7 +698,7 @@ def main():
     tester = PatchTester(cfg)
     test_func = tester.study if args.study else tester.test
     test_func(save_txt=args.savetxt, save_image=args.saveimg, class_agnostic=args.class_agnostic,
-              cls_id=args.target_class, min_pixel_area=args.min_pixel_area)
+              cls_id=args.target_class, min_pixel_area=args.min_pixel_area, save_video=args.savevideo)
 
 
 if __name__ == '__main__':
