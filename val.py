@@ -418,6 +418,6 @@ def main(opt):
             raise NotImplementedError(f'--task {opt.task} not in ("train", "val", "test", "speed", "study")')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     opt = parse_opt()
     main(opt)
