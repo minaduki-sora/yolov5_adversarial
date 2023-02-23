@@ -100,8 +100,7 @@ class YOLODataset(Dataset):
         if img_w == img_h:
             padded_img = img
         else:
-            dim_to_pad = 1 if img_w < img_h else 2
-            if dim_to_pad == 1:
+            if img_w < img_h:
                 padding = (img_h - img_w) / 2
                 padded_img = Image.new('RGB', (img_h, img_h), color=(127, 127, 127))
                 padded_img.paste(img, (int(padding), 0))
