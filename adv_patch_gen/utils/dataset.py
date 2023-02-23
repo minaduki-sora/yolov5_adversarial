@@ -27,6 +27,7 @@ class YOLODataset(Dataset):
         model_in_sz: model input image size (height, width)
         use_even_odd_images: optionally load a data subset based on the last numeric char of the img filename [all, even, odd]
         filter_class_id: np.ndarray class id(s) to get. Set None to get all classes
+        min_pixel_area: min pixel area below which all boxes are filtered out. (Out of the model in size area)
         shuffle: Whether or not to shuffle the dataset.
     """
 
@@ -37,6 +38,7 @@ class YOLODataset(Dataset):
                  model_in_sz: Tuple[int, int],
                  use_even_odd_images: str = "all",
                  filter_class_ids: Optional[np.array] = None,
+                 min_pixel_area: Optional[int] = None,
                  shuffle: bool = True):
         assert use_even_odd_images in {"all", "even", "odd"}, "use_even_odd param can only be all, even or odd"
         image_paths = glob.glob(osp.join(image_dir, "*"))
@@ -63,6 +65,7 @@ class YOLODataset(Dataset):
         self.model_in_sz = model_in_sz
         self.shuffle = shuffle
         self.max_n_labels = max_labels
+        self.min_pixel_area = min_pixel_area
         self.filter_class_ids = np.asarray(filter_class_ids) if filter_class_ids is not None else None
 
     def __len__(self):
@@ -86,6 +89,11 @@ class YOLODataset(Dataset):
 
         label = torch.from_numpy(label).float()
         image, label = self.pad_and_scale(image, label)
+        # filter boxes by bbox area pixels compared to the model in size (640x640 by default)
+        if self.min_pixel_area is not None:
+            label = label[(label[:, 3] * label[:, 4]) >= (
+                self.min_pixel_area / (self.model_in_sz[0] * self.model_in_sz[1]))]
+            label = label if len(label) > 0 else torch.ones([1, 5])
         image = transforms.ToTensor()(image)
         label = self.pad_label(label)
         return image, label

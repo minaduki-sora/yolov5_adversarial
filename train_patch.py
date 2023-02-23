@@ -85,6 +85,7 @@ class PatchTrainer:
                         cfg.model_in_sz,
                         cfg.use_even_odd_images,
                         filter_class_ids=cfg.objective_class_id,
+                        min_pixel_area=cfg.min_pixel_area,
                         shuffle=True),
             batch_size=cfg.batch_size,
             shuffle=True,
