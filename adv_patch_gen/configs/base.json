@@ -24,6 +24,7 @@
     ],
     "objective_class_id": null,
     "target_size_frac": 0.3,
+    "min_pixel_area": null,
     "rotate_patches": true,
     "transform_patches": true,
     "patch_alpha": 1,
