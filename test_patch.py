@@ -692,6 +692,7 @@ def main():
         savename += (f'_tc{args.target_class}' if args.target_class is not None else '')
     savename += ('_agnostic' if args.class_agnostic else '')
     savename += ('_study' if args.study else '')
+    savename += (f'_gt{args.min_pixel_area}' if args.min_pixel_area is not None else '')
     cfg.savedir = osp.join(args.savedir, savename)
 
     print(f"{BColors.OKBLUE} Test Arguments: {args} {BColors.ENDC}")
