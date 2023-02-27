@@ -194,6 +194,7 @@ class PatchTester:
              class_agnostic: bool = False,
              cls_id: Optional[int] = None,
              min_pixel_area: Optional[int] = None,
+             save_plots: bool = False,
              save_video: bool = False,
              max_images: int = 100000) -> dict:
         """
@@ -328,7 +329,7 @@ class PatchTester:
                 clean_results.append(
                     {'image_id': image_id,
                      'bbox': [x_center - width / 2, y_center - height / 2, width, height],
-                     'score': score,
+                     'score': round(score, 5),
                      'category_id': 0 if class_agnostic else int(cls_id_box)})
                 clean_gt_results.append(
                     {'id': box_id,
@@ -407,8 +408,8 @@ class PatchTester:
                         f'{cls_id_box} {x_center/m_w} {y_center/m_h} {width/m_w} {height/m_h}\n')
                 patch_results.append(
                     {'image_id': image_id,
-                     'bbox': [x_center - width / 2, y_center - height / 2, width, height],
-                     'score': score,
+                     'bbox': [x_center - (width / 2), y_center - (height / 2), width, height],
+                     'score': round(score, 5),
                      'category_id': 0 if class_agnostic else int(cls_id_box)})
             if save_txt:
                 textfile.close()
@@ -462,8 +463,8 @@ class PatchTester:
                         f'{cls_id_box} {x_center/m_w} {y_center/m_h} {width/m_w} {height/m_h}\n')
                 noise_results.append(
                     {'image_id': image_id,
-                     'bbox': [x_center - width / 2, y_center - height / 2, width, height],
-                     'score': score,
+                     'bbox': [x_center - (width / 2), y_center - (height / 2), width, height],
+                     'score': round(score, 5),
                      'category_id': 0 if class_agnostic else int(cls_id_box)})
             if save_txt:
                 textfile.close()
@@ -487,7 +488,7 @@ class PatchTester:
         all_noise_preds = torch.cat(all_noise_preds)
 
         # Calc confusion matrices if not class_agnostic
-        if not class_agnostic:
+        if not class_agnostic and save_plots:
             patch_confusion_matrix = ConfusionMatrix(len(self.cfg.class_list))
             patch_confusion_matrix.process_batch(all_patch_preds, all_labels)
             noise_confusion_matrix = ConfusionMatrix(len(self.cfg.class_list))
@@ -600,8 +601,8 @@ class PatchTester:
             metrics = self.test(
                 conf_thresh, nms_thresh, save_txt, save_image,
                 save_orig_padded_image, draw_bbox_on_image,
-                class_agnostic, cls_id, min_pixel_area,
-                save_video=False, max_images=max_images)
+                class_agnostic, cls_id, min_pixel_area, 
+                save_plots=False, save_video=False, max_images=max_images)
             patch_metrics.append(list(metrics["patch"]["coco_map"]) + metrics["patch"]["asr"])
             noise_metrics.append(list(metrics["noise"]["coco_map"]) + metrics["noise"]["asr"])
         
@@ -661,6 +662,9 @@ def main():
     parser.add_argument('--save-vid',
                         dest="savevideo", action='store_true',
                         help='Combine no-patch, random-patch and proper-patched images into videos')
+    parser.add_argument('--save-plot',
+                        dest="saveplots", action='store_true',
+                        help='Save the confusion matrix plots, PR, P & R curves')
     parser.add_argument('--class-agnostic',
                         dest="class_agnostic", action='store_true',
                         help='All classes are teated the same. Use when only evaluating for obj det & not classification')
@@ -699,7 +703,8 @@ def main():
     tester = PatchTester(cfg)
     test_func = tester.study if args.study else tester.test
     test_func(save_txt=args.savetxt, save_image=args.saveimg, class_agnostic=args.class_agnostic,
-              cls_id=args.target_class, min_pixel_area=args.min_pixel_area, save_video=args.savevideo)
+              cls_id=args.target_class, min_pixel_area=args.min_pixel_area, 
+              save_plots=args.saveplots, save_video=args.savevideo)
 
 
 if __name__ == '__main__':
