@@ -1,8 +1,14 @@
 import os.path as osp
+from typing import Optional
 from subprocess import Popen, PIPE
 
 
-def ffmpeg_create_video_from_image_dir(source_image_dir: str, target_video_path: str, etxn: str = ".jpg", framerate: int = 30) -> None:
+def ffmpeg_create_video_from_image_dir(
+        source_image_dir: str, 
+        target_video_path: str, 
+        etxn: str = ".jpg",
+        title_text: Optional[str] = None, 
+        framerate: int = 25) -> None:
     """
     Create a video from images in source_image_dir
     """
@@ -10,13 +16,19 @@ def ffmpeg_create_video_from_image_dir(source_image_dir: str, target_video_path:
     cmd = ["ffmpeg", "-y",
            "-framerate", str(framerate),
            "-pattern_type", "glob",
-           "-i", source,
-           target_video_path]
+           "-i", source]
+    if title_text is not None:
+        text_cmd = f"drawtext=text='{title_text}':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:boxborderw=5:x=(w-text_w)/2:y=text_h"
+        cmd += ["-vf", text_cmd]
+    cmd += [target_video_path]
     output, error = Popen(
         cmd, universal_newlines=True, stdin=PIPE, stdout=PIPE, stderr=PIPE).communicate()
 
 
-def ffmpeg_combine_two_vids(vid1: str, vid2: str, target_video_path: str) -> None:
+def ffmpeg_combine_two_vids(
+        vid1: str, 
+        vid2: str, 
+        target_video_path: str) -> None:
     """
     Attaches two videos side by side horizontally and saves to target_video_path
     """
@@ -28,7 +40,11 @@ def ffmpeg_combine_two_vids(vid1: str, vid2: str, target_video_path: str) -> Non
         cmd, universal_newlines=True, stdin=PIPE, stdout=PIPE, stderr=PIPE).communicate()
 
 
-def ffmpeg_combine_three_vids(vid1: str, vid2: str, vid3: str, target_video_path: str) -> None:
+def ffmpeg_combine_three_vids(
+        vid1: str, 
+        vid2: str, 
+        vid3: str, 
+        target_video_path: str) -> None:
     """
     Attaches three videos side by side horizontally and saves to target_video_path
     """
