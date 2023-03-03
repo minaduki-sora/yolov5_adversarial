@@ -428,7 +428,9 @@ class PatchTester:
             # create a random patch, transform it and add it to image
             random_patch = torch.rand(adv_patch_cpu.size()).to(self.dev)
             adv_batch_t = self.patch_transformer(
-                random_patch, lab_fake_batch, model_in_sz, do_rotate=True, rand_loc=False)
+                random_patch, lab_fake_batch, model_in_sz, 
+                do_transforms=self.cfg.transform_patches,
+                do_rotate=self.cfg.rotate_patches, rand_loc=False)
             p_img_batch = self.patch_applier(img_fake_batch, adv_batch_t)
             p_img = p_img_batch.squeeze(0)
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
@@ -563,9 +565,9 @@ class PatchTester:
             patch_vid = osp.join(video_dir, "patch.mp4")
             random_vid = osp.join(video_dir, "random.mp4")
             clean_vid = osp.join(video_dir, "clean.mp4")
-            ffmpeg_create_video_from_image_dir(proper_img_dir, patch_vid)
-            ffmpeg_create_video_from_image_dir(random_img_dir, random_vid)
-            ffmpeg_create_video_from_image_dir(clean_img_dir, clean_vid)
+            ffmpeg_create_video_from_image_dir(proper_img_dir, patch_vid, title_text="Adversarial Patch")
+            ffmpeg_create_video_from_image_dir(random_img_dir, random_vid, title_text="Random Patch")
+            ffmpeg_create_video_from_image_dir(clean_img_dir, clean_vid, title_text="No Patch")
             ffmpeg_combine_two_vids(clean_vid, patch_vid, osp.join(video_dir, "clean_patch.mp4"))
             ffmpeg_combine_two_vids(clean_vid, random_vid, osp.join(video_dir, "clean_random.mp4"))
             ffmpeg_combine_three_vids(clean_vid, random_vid, patch_vid, osp.join(video_dir, "clean_random_patch.mp4"))
