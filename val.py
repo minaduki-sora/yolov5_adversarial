@@ -126,6 +126,7 @@ def run(
         callbacks=Callbacks(),
         compute_loss=None,
         anno_json=None,
+        target_class=None,
 ):
     # Initialize/load model and set device
     training = model is not None
@@ -171,7 +172,8 @@ def run(
             assert ncm == nc, f'{weights} ({ncm} classes) trained on different --data than what you passed ({nc} ' \
                               f'classes). Pass correct combination of --weights and --data that are trained together.'
         model.warmup(imgsz=(1 if pt else batch_size, 3, imgsz, imgsz))  # warmup
-        pad, rect = (0.0, False) if task == 'speed' else (0.5, pt)  # square inference for benchmarks
+        # this has been set to True to size,size imgs
+        pad, rect = (0.0, False) if task == 'speed' else (0.5, False)  # square inference for benchmarks
         task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
         dataloader = create_dataloader(data[task],
                                        imgsz,
@@ -202,6 +204,8 @@ def run(
             if cuda:
                 im = im.to(device, non_blocking=True)
                 targets = targets.to(device)
+                if target_class is not None:  # filter target labels
+                    targets = targets[targets[:, 1] == target_class]
             im = im.half() if half else im.float()  # uint8 to fp16/32
             im /= 255  # 0 - 255 to 0.0 - 1.0
             nb, _, height, width = im.shape  # batch size, channels, height, width
@@ -225,7 +229,8 @@ def run(
                                         multi_label=True,
                                         agnostic=single_cls,
                                         max_det=max_det)
-
+        if target_class is not None:  # filter model preds
+            preds = [pred[pred[:, 5] == target_class] for pred in preds]
         # Metrics
         for si, pred in enumerate(preds):
             labels = targets[targets[:, 0] == si, 1:]
@@ -277,6 +282,14 @@ def run(
         tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
+        cname = names[target_class] if target_class is not None else "all"
+        mname = '_'.join(weights[0].split('/')[2].split('_')[:2])
+        rap50 = [round(val, 2) for val in ap50]
+        with open(os.path.join(save_dir, "metrics.txt"), 'w') as fw:
+            if target_class is not None:
+                fw.write(f"map50 {name} {mname} {cname}: {round(map50, 2)}\n")
+            else:
+                fw.write(f"map50 {name} {mname} {cname}: {rap50[0]} {rap50[1]} {rap50[2]} {rap50[3]} {round(map50, 2)}\n")
     nt = np.bincount(stats[3].astype(int), minlength=nc)  # number of targets per class
 
     # Print results
@@ -317,6 +330,8 @@ def run(
             anno = COCO(anno_json)  # init annotations api
             pred = anno.loadRes(pred_json)  # init predictions api
             eval = COCOeval(anno, pred, 'bbox')
+            if target_class is not None:  # filter coco ground truth for a specific class
+                eval.params.catIds = [target_class]
             if is_coco:
                 eval.params.imgIds = [int(Path(x).stem) for x in dataloader.dataset.im_files]  # image IDs to evaluate
             eval.evaluate()
@@ -373,6 +388,7 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
+    parser.add_argument('--target-class', default=None, type=int, help='target class int id to target. Pass None to eval for all classes')
     parser.add_argument('--anno-json', default="../datasets/coco/annotations/instances_val2017.json",
                         help='path to ref ground truth json annot file')
     opt = parser.parse_args()
