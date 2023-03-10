@@ -282,14 +282,15 @@ def run(
         tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
-        cname = names[target_class] if target_class is not None else "all"
-        mname = '_'.join(weights[0].split('/')[2].split('_')[:2])
-        rap50 = [round(val, 2) for val in ap50]
-        with open(os.path.join(save_dir, "metrics.txt"), 'w') as fw:
-            if target_class is not None:
-                fw.write(f"map50 {name} {mname} {cname}: {round(map50, 2)}\n")
-            else:
-                fw.write(f"map50 {name} {mname} {cname}: {rap50[0]} {rap50[1]} {rap50[2]} {rap50[3]} {round(map50, 2)}\n")
+        if weights:
+            cname = names[target_class] if target_class is not None else "all"
+            mname = '_'.join(weights[0].split('/')[2].split('_')[:2])
+            rap50 = [round(val, 2) for val in ap50]
+            with open(os.path.join(save_dir, "metrics.txt"), 'w') as fw:
+                if target_class is not None:
+                    fw.write(f"map50 {name} {mname} {cname}: {round(map50, 2)}\n")
+                else:
+                    fw.write(f"map50 {name} {mname} {cname}: {rap50[0]} {rap50[1]} {rap50[2]} {rap50[3]} {round(map50, 2)}\n")
     nt = np.bincount(stats[3].astype(int), minlength=nc)  # number of targets per class
 
     # Print results
