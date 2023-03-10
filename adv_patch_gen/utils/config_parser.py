@@ -22,7 +22,7 @@ def get_argparser(desc="Config file load for training adv patches") -> argparse.
     """
     parser = argparse.ArgumentParser(
         description=desc)
-    parser.add_argument('--cfg', '--config', type=str, dest="config", default="adv_patch_gen/configs/base.json",
-                        help='Path to config file to use for adv patch generation (default: %(default)s)')
+    parser.add_argument('--cfg', '--config', type=str, dest="config", required=True,
+                        help='Path to JSON config file to use for adv patch generation (default: %(default)s)')
     return parser
 
