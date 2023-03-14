@@ -59,7 +59,7 @@ class PatchTrainer:
         model = DetectMultiBackend(cfg.weights_file, device=self.dev, dnn=False, data=None, fp16=False)
         self.model = model.eval()
 
-        self.patch_transformer = PatchTransformer(cfg.target_size_frac, self.dev).to(self.dev)
+        self.patch_transformer = PatchTransformer(cfg.target_size_frac, cfg.mul_gau_mean, cfg.mul_gau_std, self.dev).to(self.dev)
         self.patch_applier = PatchApplier(cfg.patch_alpha).to(self.dev)
         self.prob_extractor = MaxProbExtractor(cfg).to(self.dev)
         self.sal_loss = SaliencyLoss().to(self.dev)
@@ -182,7 +182,7 @@ class PatchTrainer:
 
         start_time = time.time()
         for epoch in range(1, self.cfg.n_epochs + 1):
-            out_patch_path = osp.join(patch_dir, f"{self.cfg.patch_name}_epoch_{epoch}.png")
+            out_patch_path = osp.join(patch_dir, f"e_{epoch}.png")
             ep_loss = 0
             min_tv_loss = torch.tensor(self.cfg.min_tv_loss).to(self.dev)
 
@@ -194,7 +194,8 @@ class PatchTrainer:
                     lab_batch = lab_batch.to(self.dev)
                     adv_patch = adv_patch_cpu.to(self.dev)
                     adv_batch_t = self.patch_transformer(
-                        adv_patch, lab_batch, self.cfg.model_in_sz,
+                        adv_patch, lab_batch, self.cfg.model_in_sz, 
+                        use_mul_add_gau=self.cfg.use_mul_add_gau,
                         do_transforms=self.cfg.transform_patches,
                         do_rotate=self.cfg.rotate_patches, rand_loc=False)
                     p_img_batch = self.patch_applier(
@@ -334,6 +335,7 @@ class PatchTrainer:
                 # transform patch and add it to image
                 adv_batch_t = self.patch_transformer(
                     adv_patch, lab_fake_batch, self.cfg.model_in_sz,
+                    use_mul_add_gau=self.cfg.use_mul_add_gau,
                     do_transforms=self.cfg.transform_patches,
                     do_rotate=self.cfg.rotate_patches, rand_loc=False)
                 p_img_batch = self.patch_applier(img_fake_batch, adv_batch_t)
