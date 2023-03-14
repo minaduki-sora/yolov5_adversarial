@@ -1,5 +1,6 @@
 """ Modules for creating adversarial object patch """
 import math
+from typing import Union, Tuple
 
 import numpy as np
 import torch
@@ -15,12 +16,21 @@ class PatchTransformer(nn.Module):
     Module providing the functionality necessary to transform a batch of patches, randomly adjusting brightness and
     contrast, adding random amount of noise, and rotating randomly. Resizes patches according to as size based on the
     batch of labels, and pads them to the dimension of an image.
-
     """
 
-    def __init__(self, target_size_frac: float = 0.35, dev: torch.device = torch.device("cuda:0")):
+    def __init__(self,
+                 t_size_frac: Union[float, Tuple[float, float]] = 0.3,
+                 mul_gau_mean: Union[float, Tuple[float, float]] = (0.5, 0.8),
+                 mul_gau_std: Union[float, Tuple[float, float]] = 0.1,
+                 dev: torch.device = torch.device("cuda:0")):
         super(PatchTransformer, self).__init__()
-        self.target_size_frac = target_size_frac
+        # convert to duplicated lists/tuples to unpack and send to np.random.uniform
+        self.t_size_frac = [t_size_frac, t_size_frac] if isinstance(t_size_frac, float) else t_size_frac
+        self.m_gau_mean = [mul_gau_mean, mul_gau_mean] if isinstance(mul_gau_mean, float) else mul_gau_mean
+        self.m_gau_std = [mul_gau_std, mul_gau_std] if isinstance(mul_gau_std, float) else mul_gau_std
+        assert (len(self.t_size_frac) in {1, 2} and
+                len(self.m_gau_mean) in {1, 2} and
+                len(self.m_gau_std) in {1, 2}), "Values must have a len of 1 or 2"
         self.dev = dev
         self.min_contrast = 0.8
         self.max_contrast = 1.2
@@ -33,12 +43,13 @@ class PatchTransformer(nn.Module):
 
         self.tensor = torch.FloatTensor if "cpu" in str(dev) else torch.cuda.FloatTensor
 
-    def forward(self, adv_patch, lab_batch, model_in_sz, do_transforms=True, do_rotate=True, rand_loc=True):
+    def forward(self, adv_patch, lab_batch, model_in_sz, use_mul_add_gau=True, do_transforms=True, do_rotate=True, rand_loc=True):
         # add gaussian noise to reduce contrast with a stohastic process
         c, h, w = adv_patch.shape
-        adv_patch = adv_patch * torch.normal(0.5, 0.1, (c, h, w)).to(self.dev) + \
-            torch.normal(0, 0.001, (c, h, w)).to(self.dev)
-
+        if use_mul_add_gau:
+            adv_patch = adv_patch * \
+                torch.normal(np.random.uniform(*self.m_gau_mean), np.random.uniform(*self.m_gau_std), (c, h, w), device=self.dev) + \
+                torch.normal(0, 0.001, (c, h, w), device=self.dev)
         adv_patch = self.medianpooler(adv_patch.unsqueeze(0))
         m_h, m_w = model_in_sz
         # Determine size of padding
@@ -104,8 +115,9 @@ class PatchTransformer(nn.Module):
         lab_batch_scaled[:, :, 2] = lab_batch[:, :, 2] * m_w
         lab_batch_scaled[:, :, 3] = lab_batch[:, :, 3] * m_w
         lab_batch_scaled[:, :, 4] = lab_batch[:, :, 4] * m_w
-        target_size = torch.sqrt(((lab_batch_scaled[:, :, 3].mul(self.target_size_frac)) ** 2) +
-                                 ((lab_batch_scaled[:, :, 4].mul(self.target_size_frac)) ** 2))
+        tsize = np.random.uniform(*self.t_size_frac)
+        target_size = torch.sqrt(((lab_batch_scaled[:, :, 3].mul(tsize)) ** 2) +
+                                 ((lab_batch_scaled[:, :, 4].mul(tsize)) ** 2))
 
         target_x = lab_batch[:, :, 1].view(np.prod(batch_size))
         target_y = lab_batch[:, :, 2].view(np.prod(batch_size))
