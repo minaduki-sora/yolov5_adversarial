@@ -76,8 +76,9 @@ class PatchTester:
         model = DetectMultiBackend(cfg.weights_file, device=self.dev, dnn=False, data=None, fp16=False)
         self.model = model.eval().to(self.dev)
         self.patch_transformer = PatchTransformer(
-            cfg.target_size_frac, self.dev).to(self.dev)
-        self.patch_applier = PatchApplier(cfg.patch_alpha).to(self.dev)
+            cfg.target_size_frac, cfg.mul_gau_mean, cfg.mul_gau_std, self.dev).to(self.dev)
+        self.patch_applier = PatchApplier(
+            cfg.patch_alpha).to(self.dev)
 
     @staticmethod
     def calc_asr(
@@ -372,6 +373,7 @@ class PatchTester:
                 # transform patch and add it to image
                 adv_batch_t = self.patch_transformer(
                     adv_patch, lab_fake_batch, model_in_sz,
+                    use_mul_add_gau=self.cfg.use_mul_add_gau,
                     do_transforms=self.cfg.transform_patches,
                     do_rotate=self.cfg.rotate_patches, rand_loc=False)
                 p_img_batch = self.patch_applier(img_fake_batch, adv_batch_t)
@@ -428,7 +430,8 @@ class PatchTester:
             # create a random patch, transform it and add it to image
             random_patch = torch.rand(adv_patch_cpu.size()).to(self.dev)
             adv_batch_t = self.patch_transformer(
-                random_patch, lab_fake_batch, model_in_sz, 
+                random_patch, lab_fake_batch, model_in_sz,
+                use_mul_add_gau=self.cfg.use_mul_add_gau,
                 do_transforms=self.cfg.transform_patches,
                 do_rotate=self.cfg.rotate_patches, rand_loc=False)
             p_img_batch = self.patch_applier(img_fake_batch, adv_batch_t)
@@ -582,67 +585,15 @@ class PatchTester:
         print(f" Time to complete evaluation = {tf - t0} seconds")
         return {"patch": metrics_patch, "noise": metrics_noise}
 
-    def study(self,
-              n_experiments: int = 5,
-              conf_thresh: float = 0.4,
-              nms_thresh: float = 0.4,
-              save_txt: bool = False,
-              save_image: bool = False,
-              save_orig_padded_image: bool = True,
-              draw_bbox_on_image: bool = True,
-              class_agnostic: bool = False,
-              cls_id: Optional[int] = None,
-              min_pixel_area: Optional[int] = None,
-              max_images: int = 100000) -> None:
-        """
-        Generates metrics for n_experiments and calculates the mean metrics along with the ± std error
-        """
-        assert n_experiments > 0
-        patch_metrics, noise_metrics = [], []
-        for n in range(n_experiments):
-            metrics = self.test(
-                conf_thresh, nms_thresh, save_txt, save_image,
-                save_orig_padded_image, draw_bbox_on_image,
-                class_agnostic, cls_id, min_pixel_area, 
-                save_plots=False, save_video=False, max_images=max_images)
-            patch_metrics.append(list(metrics["patch"]["coco_map"]) + metrics["patch"]["asr"])
-            noise_metrics.append(list(metrics["noise"]["coco_map"]) + metrics["noise"]["asr"])
-        
-        patch_metrics, noise_metrics = np.asarray(patch_metrics), np.asarray(noise_metrics)
-        patch_metrics_with_err = [calc_mean_and_std_err(patch_metrics[:, i]) for i in range(len(patch_metrics[0]))]
-        noise_metrics_with_err = [calc_mean_and_std_err(noise_metrics[:, i]) for i in range(len(noise_metrics[0]))]
-
-        def _metric_fmt(mean_std_err: Tuple[float, float], sdigit: int = 3) -> str:
-            mean, std_err = mean_std_err
-            return f"{round(mean, sdigit)} ± {round(std_err, sdigit)}"
-
-        patch_txt_path = osp.join(self.cfg.savedir, 'patch_map_stats_with_std_err.txt')
-        noise_txt_path = osp.join(self.cfg.savedir, 'noise_map_stats_with_std_err.txt')
-        for txtpath, metrics in zip([patch_txt_path, noise_txt_path], [patch_metrics_with_err, noise_metrics_with_err]):
-            with open(txtpath, 'w', encoding="utf-8") as f_ptr:
-                f_ptr.write(f"Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = {_metric_fmt(metrics[0])}\n")
-                f_ptr.write(f"Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = {_metric_fmt(metrics[1])}\n")
-                f_ptr.write(f"Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = {_metric_fmt(metrics[2])}\n")
-                f_ptr.write(f"Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = {_metric_fmt(metrics[3])}\n")
-                f_ptr.write(f"Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = {_metric_fmt(metrics[4])}\n")
-                f_ptr.write(f"Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = {_metric_fmt(metrics[5])}\n")
-                f_ptr.write(f"Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = {_metric_fmt(metrics[6])}\n")
-                f_ptr.write(f"Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = {_metric_fmt(metrics[7])}\n")
-                f_ptr.write(f"Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = {_metric_fmt(metrics[8])}\n")
-                f_ptr.write(f"Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = {_metric_fmt(metrics[9])}\n")
-                f_ptr.write(f"Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = {_metric_fmt(metrics[10])}\n")
-                f_ptr.write(f"Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = {_metric_fmt(metrics[11])}\n")
-                f_ptr.write(f"Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area= small | = {_metric_fmt(metrics[12])}\n")
-                f_ptr.write(f"Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area=medium | = {_metric_fmt(metrics[13])}\n")
-                f_ptr.write(f"Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area= large | = {_metric_fmt(metrics[14])}\n")
-                f_ptr.write(f"Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area=   all | = {_metric_fmt(metrics[15])}\n")
-
 
 def main():
     parser = get_argparser(desc="Test patches on a directory with images. Params from argparse take precedence over those from config")
     parser.add_argument('--dev', type=str,
                         dest="device", default=None, required=False,
                         help='Device to use (i.e. cpu, cuda:0, cuda:1). If absent, use "device" from cfg json (default: %(default)s)')
+    parser.add_argument('--ts', '--target_size_frac', type=float, nargs='+',
+                        dest="target_size_frac", default=0.3, required=False,
+                        help='Patch target_size_frac of the bounding box area. Providing two values sets a range. (default: %(default)s)')
     parser.add_argument('-w', '--weights', type=str,
                         dest="weights", default=None, required=False,
                         help='Path to yolov5 model wt file. If absent, use "weights_file" model path from cfg json (default: %(default)s)')
@@ -676,9 +627,6 @@ def main():
     parser.add_argument('--min-pixel-area', type=int,
                         dest="min_pixel_area", default=None, required=False,
                         help='all bboxes having area < this are filtered out during testing. if None, use all boxes (default: %(default)s)')
-    parser.add_argument('--study',
-                        dest="study", action='store_true',
-                        help='Runs test over N times calculating the mean metrics with std error uncertainty')
 
     args = parser.parse_args()
     cfg = load_config_object(args.config)
@@ -686,7 +634,10 @@ def main():
     cfg.weights_file = args.weights if args.weights is not None else cfg.weights_file  # check if cfg.weights_file is ignored
     cfg.patchfile = args.patchfile
     cfg.imgdir = args.imgdir
-
+    cfg.target_size_frac = args.target_size_frac
+    
+    if len(args.target_size_frac) not in {1, 2}: 
+        raise ValueError("target_size_frac can only have one or two values")
     if args.savevideo and not args.saveimg:
         raise ValueError(f"To save videos, images must also be saved pass both --save-img & --save-vid flags")
     savename = f'{time.strftime("%Y%m%d-%H%M%S")}_' + cfg.patch_name
@@ -697,16 +648,14 @@ def main():
     else:
         savename += (f'_tc{args.target_class}' if args.target_class is not None else '')
     savename += ('_agnostic' if args.class_agnostic else '')
-    savename += ('_study' if args.study else '')
     savename += (f'_gt{args.min_pixel_area}' if args.min_pixel_area is not None else '')
     cfg.savedir = osp.join(args.savedir, savename)
 
     print(f"{BColors.OKBLUE} Test Arguments: {args} {BColors.ENDC}")
     tester = PatchTester(cfg)
-    test_func = tester.study if args.study else tester.test
-    test_func(save_txt=args.savetxt, save_image=args.saveimg, class_agnostic=args.class_agnostic,
-              cls_id=args.target_class, min_pixel_area=args.min_pixel_area, 
-              save_plots=args.saveplots, save_video=args.savevideo)
+    tester.test(save_txt=args.savetxt, save_image=args.saveimg, class_agnostic=args.class_agnostic,
+                cls_id=args.target_class, min_pixel_area=args.min_pixel_area, 
+                save_plots=args.saveplots, save_video=args.savevideo)
 
 
 if __name__ == '__main__':
