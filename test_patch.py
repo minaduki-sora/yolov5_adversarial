@@ -29,7 +29,7 @@ from utils.plots import Annotator, colors
 
 from adv_patch_gen.utils.config_parser import get_argparser, load_config_object
 from adv_patch_gen.utils.patch import PatchApplier, PatchTransformer
-from adv_patch_gen.utils.common import calc_mean_and_std_err, pad_to_square, BColors, IMG_EXTNS
+from adv_patch_gen.utils.common import pad_to_square, BColors, IMG_EXTNS
 from adv_patch_gen.utils.video import ffmpeg_create_video_from_image_dir, ffmpeg_combine_two_vids, ffmpeg_combine_three_vids
 
 # optionally set seed for repeatability
@@ -88,7 +88,8 @@ class PatchTester:
         lo_area: float = 20**2,
         hi_area: float = 67**2,
         cls_id: Optional[int] = None,
-        class_agnostic: bool = False) -> Tuple[float, float, float, float]:
+        class_agnostic: bool = False,
+        recompute_asr_all: bool = False) -> Tuple[float, float, float, float]:
         """
         Calculate attack success rate (How many bounding boxes were hidden from the detector)
         for all predictions and for different bbox areas.
@@ -101,6 +102,7 @@ class PatchTester:
             hi_area: large bbox area threshold
             cls_id: filter for a particular class
             class_agnostic: All classes are considered the same
+            recompute_asr_all: Recomputer ASR for all boxes aggregrated together slower but more acc. asr
         Return:
             attack success rates bbox area tuple: small, medium, large, all
                 float, float, float, float
@@ -131,9 +133,12 @@ class PatchTester:
         conf_matrix = ConfusionMatrix(len(class_list))
         conf_matrix.process_batch(bp_large, b_large)
         tps_large, fps_large = conf_matrix.tp_fp()
-        conf_matrix = ConfusionMatrix(len(class_list))
-        conf_matrix.process_batch(boxes_pred, boxes)
-        tps_all, fps_all = conf_matrix.tp_fp()
+        if recompute_asr_all:
+            conf_matrix = ConfusionMatrix(len(class_list))
+            conf_matrix.process_batch(boxes_pred, boxes)
+            tps_all, fps_all = conf_matrix.tp_fp()
+        else:
+            tps_all, fps_all = tps_small + tps_med + tps_large, fps_small + fps_med + fps_large
 
         # class agnostic mode (Mis-clsfs are ignored, only non-dets matter)
         if class_agnostic:
@@ -279,6 +284,9 @@ class PatchTester:
 
         #### iterate through all images ####
         box_id = 0
+        transforms_resize = transforms.Resize(model_in_sz)
+        transforms_totensor = transforms.ToTensor()
+        transforms_topil = transforms.ToPILImage('RGB')
         for imgfile in tqdm.tqdm(img_paths):
             img_name = osp.splitext(imgfile)[0].split('/')[-1]
             imgfile_path = Path(imgfile)
@@ -294,11 +302,11 @@ class PatchTester:
             # open image and adjust to yolo input size
             img = Image.open(imgfile).convert('RGB')
             padded_img = pad_to_square(img)
-            padded_img = transforms.Resize(model_in_sz)(padded_img)
+            padded_img = transforms_resize(padded_img)
 
             #######################################
             # generate labels to use later for patched image
-            padded_img_tensor = transforms.ToTensor()(padded_img).unsqueeze(0).to(self.dev)
+            padded_img_tensor = transforms_totensor(padded_img).unsqueeze(0).to(self.dev)
             with torch.no_grad():
                 pred = self.model(padded_img_tensor)
                 boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
@@ -362,7 +370,7 @@ class PatchTester:
 
             #######################################
             # Apply proper patches
-            padded_img_copy = transforms.ToTensor()(padded_img).to(self.dev)
+            padded_img_copy = transforms_totensor(padded_img).to(self.dev)
             img_fake_batch = padded_img_copy.unsqueeze(0)
             lab_fake_batch = label.unsqueeze(0).to(self.dev)
 
@@ -378,14 +386,14 @@ class PatchTester:
                     do_rotate=self.cfg.rotate_patches, rand_loc=False)
                 p_img_batch = self.patch_applier(img_fake_batch, adv_batch_t)
                 p_img = p_img_batch.squeeze(0)
-                p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
+                p_img_pil = transforms_topil(p_img.cpu())
 
             properpatchedname = img_name + ".jpg"
             # generate a label file for the image with sticker
             txtname = properpatchedname.replace('.jpg', '.txt')
             txtpath = osp.join(proper_txt_dir, txtname)
 
-            padded_img_tensor = transforms.ToTensor()(p_img_pil).unsqueeze(0).to(self.dev)
+            padded_img_tensor = transforms_totensor(p_img_pil).unsqueeze(0).to(self.dev)
             with torch.no_grad():
                 pred = self.model(padded_img_tensor)
                 boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
@@ -436,14 +444,14 @@ class PatchTester:
                 do_rotate=self.cfg.rotate_patches, rand_loc=False)
             p_img_batch = self.patch_applier(img_fake_batch, adv_batch_t)
             p_img = p_img_batch.squeeze(0)
-            p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
+            p_img_pil = transforms_topil(p_img.cpu())
 
             randompatchedname = img_name + ".jpg"
             # generate a label file for the image with random patch
             txtname = randompatchedname.replace('.jpg', '.txt')
             txtpath = osp.join(random_txt_dir, txtname)
 
-            padded_img_tensor = transforms.ToTensor()(p_img_pil).unsqueeze(0).to(self.dev)
+            padded_img_tensor = transforms_totensor(p_img_pil).unsqueeze(0).to(self.dev)
             with torch.no_grad():
                 pred = self.model(padded_img_tensor)
                 boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
@@ -592,7 +600,7 @@ def main():
                         dest="device", default=None, required=False,
                         help='Device to use (i.e. cpu, cuda:0, cuda:1). If absent, use "device" from cfg json (default: %(default)s)')
     parser.add_argument('--ts', '--target_size_frac', type=float, nargs='+',
-                        dest="target_size_frac", default=0.3, required=False,
+                        dest="target_size_frac", default=[0.3], required=False,
                         help='Patch target_size_frac of the bounding box area. Providing two values sets a range. (default: %(default)s)')
     parser.add_argument('-w', '--weights', type=str,
                         dest="weights", default=None, required=False,
@@ -634,9 +642,10 @@ def main():
     cfg.weights_file = args.weights if args.weights is not None else cfg.weights_file  # check if cfg.weights_file is ignored
     cfg.patchfile = args.patchfile
     cfg.imgdir = args.imgdir
+    args.target_size_frac = args.target_size_frac[0] if len(args.target_size_frac) == 1 else args.target_size_frac
     cfg.target_size_frac = args.target_size_frac
-    
-    if len(args.target_size_frac) not in {1, 2}: 
+
+    if not isinstance(args.target_size_frac, float) and len(args.target_size_frac) != 2:
         raise ValueError("target_size_frac can only have one or two values")
     if args.savevideo and not args.saveimg:
         raise ValueError(f"To save videos, images must also be saved pass both --save-img & --save-vid flags")
