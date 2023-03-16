@@ -33,7 +33,7 @@ from adv_patch_gen.utils.common import pad_to_square, BColors, IMG_EXTNS
 from adv_patch_gen.utils.video import ffmpeg_create_video_from_image_dir, ffmpeg_combine_two_vids, ffmpeg_combine_three_vids
 
 # optionally set seed for repeatability
-SEED = None
+SEED = 42
 if SEED is not None:
     random.seed(SEED)
     np.random.seed(SEED)
@@ -166,11 +166,11 @@ class PatchTester:
         return max(asr_small, 0.), max(asr_medium, 0.), max(asr_large, 0.), max(asr_all, 0.)
 
     @staticmethod
-    def draw_bbox_on_pil_image(bbox: np.ndarray, padded_img: Image, class_list: List[str]) -> Image:
+    def draw_bbox_on_pil_image(bbox: np.ndarray, padded_img_pil: Image, class_list: List[str]) -> Image:
         """
         Draw bounding box on a PIL image and return said image after drawing
         """
-        padded_img_np = np.ascontiguousarray(padded_img)
+        padded_img_np = np.ascontiguousarray(padded_img_pil)
         label_2_class = dict(enumerate(class_list))
 
         annotator = Annotator(padded_img_np, line_width=1, example=str(label_2_class))
@@ -287,6 +287,7 @@ class PatchTester:
         transforms_resize = transforms.Resize(model_in_sz)
         transforms_totensor = transforms.ToTensor()
         transforms_topil = transforms.ToPILImage('RGB')
+        ones_tensor = torch.ones([1, 5]).to(self.dev)
         for imgfile in tqdm.tqdm(img_paths):
             img_name = osp.splitext(imgfile)[0].split('/')[-1]
             imgfile_path = Path(imgfile)
@@ -300,13 +301,12 @@ class PatchTester:
             txtname = img_name + '.txt'
             txtpath = osp.join(clean_txt_dir, txtname)
             # open image and adjust to yolo input size
-            img = Image.open(imgfile).convert('RGB')
-            padded_img = pad_to_square(img)
-            padded_img = transforms_resize(padded_img)
+            padded_img_pil = pad_to_square(Image.open(imgfile).convert('RGB'))
+            padded_img_pil = transforms_resize(padded_img_pil)
 
             #######################################
             # generate labels to use later for patched image
-            padded_img_tensor = transforms_totensor(padded_img).unsqueeze(0).to(self.dev)
+            padded_img_tensor = transforms_totensor(padded_img_pil).unsqueeze(0).to(self.dev)
             with torch.no_grad():
                 pred = self.model(padded_img_tensor)
                 boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
@@ -357,10 +357,10 @@ class PatchTester:
             if save_image and save_orig_padded_image:
                 if draw_bbox_on_image:
                     padded_img_drawn = PatchTester.draw_bbox_on_pil_image(
-                        all_labels[-1], padded_img, self.cfg.class_list)
+                        all_labels[-1], padded_img_pil, self.cfg.class_list)
                     padded_img_drawn.save(osp.join(clean_img_dir, cleanname))
                 else:
-                    padded_img.save(osp.join(clean_img_dir, cleanname))
+                    padded_img_pil.save(osp.join(clean_img_dir, cleanname))
 
             # use a filler ones array for no dets
             label = np.asarray(labels) if labels else np.ones([5])
@@ -370,13 +370,11 @@ class PatchTester:
 
             #######################################
             # Apply proper patches
-            padded_img_copy = transforms_totensor(padded_img).to(self.dev)
-            img_fake_batch = padded_img_copy.unsqueeze(0)
+            img_fake_batch = padded_img_tensor
             lab_fake_batch = label.unsqueeze(0).to(self.dev)
-
-            if len(lab_fake_batch) == 1 and np.array_equal(lab_fake_batch[0], [1., 1., 1., 1., 1.]):
+            if len(lab_fake_batch[0]) == 1 and torch.equal(lab_fake_batch[0], ones_tensor):
                 # no det, use images without patches
-                p_img_pil = padded_img
+                p_tensor_batch = padded_img_tensor
             else:
                 # transform patch and add it to image
                 adv_batch_t = self.patch_transformer(
@@ -384,18 +382,15 @@ class PatchTester:
                     use_mul_add_gau=self.cfg.use_mul_add_gau,
                     do_transforms=self.cfg.transform_patches,
                     do_rotate=self.cfg.rotate_patches, rand_loc=False)
-                p_img_batch = self.patch_applier(img_fake_batch, adv_batch_t)
-                p_img = p_img_batch.squeeze(0)
-                p_img_pil = transforms_topil(p_img.cpu())
+                p_tensor_batch = self.patch_applier(img_fake_batch, adv_batch_t)
 
             properpatchedname = img_name + ".jpg"
             # generate a label file for the image with sticker
             txtname = properpatchedname.replace('.jpg', '.txt')
             txtpath = osp.join(proper_txt_dir, txtname)
 
-            padded_img_tensor = transforms_totensor(p_img_pil).unsqueeze(0).to(self.dev)
             with torch.no_grad():
-                pred = self.model(padded_img_tensor)
+                pred = self.model(p_tensor_batch)
                 boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
             # if doing targeted class performance check, ignore non target classes
             if cls_id is not None:
@@ -426,6 +421,7 @@ class PatchTester:
 
             # save properly patched img
             if save_image:
+                p_img_pil = transforms_topil(p_tensor_batch.squeeze(0).cpu())
                 if draw_bbox_on_image:
                     p_img_pil_drawn = PatchTester.draw_bbox_on_pil_image(
                         all_patch_preds[-1], p_img_pil, self.cfg.class_list)
@@ -435,25 +431,26 @@ class PatchTester:
 
             #######################################
             # Apply random patches
-            # create a random patch, transform it and add it to image
-            random_patch = torch.rand(adv_patch_cpu.size()).to(self.dev)
-            adv_batch_t = self.patch_transformer(
-                random_patch, lab_fake_batch, model_in_sz,
-                use_mul_add_gau=self.cfg.use_mul_add_gau,
-                do_transforms=self.cfg.transform_patches,
-                do_rotate=self.cfg.rotate_patches, rand_loc=False)
-            p_img_batch = self.patch_applier(img_fake_batch, adv_batch_t)
-            p_img = p_img_batch.squeeze(0)
-            p_img_pil = transforms_topil(p_img.cpu())
+            if len(lab_fake_batch[0]) == 1 and torch.equal(lab_fake_batch[0], ones_tensor):
+                # no det, use images without patches
+                p_tensor_batch = padded_img_tensor
+            else:
+                # create a random patch, transform it and add it to image
+                random_patch = torch.rand(adv_patch_cpu.size()).to(self.dev)
+                adv_batch_t = self.patch_transformer(
+                    random_patch, lab_fake_batch, model_in_sz,
+                    use_mul_add_gau=self.cfg.use_mul_add_gau,
+                    do_transforms=self.cfg.transform_patches,
+                    do_rotate=self.cfg.rotate_patches, rand_loc=False)
+                p_tensor_batch = self.patch_applier(img_fake_batch, adv_batch_t)
 
             randompatchedname = img_name + ".jpg"
             # generate a label file for the image with random patch
             txtname = randompatchedname.replace('.jpg', '.txt')
             txtpath = osp.join(random_txt_dir, txtname)
 
-            padded_img_tensor = transforms_totensor(p_img_pil).unsqueeze(0).to(self.dev)
             with torch.no_grad():
-                pred = self.model(padded_img_tensor)
+                pred = self.model(p_tensor_batch)
                 boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
             # if doing targeted class performance check, ignore non target classes
             if cls_id is not None:
@@ -484,6 +481,7 @@ class PatchTester:
 
             # save randomly patched img
             if save_image:
+                p_img_pil = transforms_topil(p_tensor_batch.squeeze(0).cpu())
                 if draw_bbox_on_image:
                     p_img_pil_drawn = PatchTester.draw_bbox_on_pil_image(
                         all_noise_preds[-1], p_img_pil, self.cfg.class_list)
@@ -491,7 +489,7 @@ class PatchTester:
                 else:
                     p_img_pil.save(osp.join(random_img_dir, randompatchedname))
 
-        del adv_batch_t, p_img_batch
+        del adv_batch_t, padded_img_tensor, p_tensor_batch
         torch.cuda.empty_cache()
 
         # reorder labels to (Array[M, 5]), class, x1, y1, x2, y2
