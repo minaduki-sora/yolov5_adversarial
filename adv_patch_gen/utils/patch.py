@@ -28,9 +28,9 @@ class PatchTransformer(nn.Module):
         self.t_size_frac = [t_size_frac, t_size_frac] if isinstance(t_size_frac, float) else t_size_frac
         self.m_gau_mean = [mul_gau_mean, mul_gau_mean] if isinstance(mul_gau_mean, float) else mul_gau_mean
         self.m_gau_std = [mul_gau_std, mul_gau_std] if isinstance(mul_gau_std, float) else mul_gau_std
-        assert (len(self.t_size_frac) in {1, 2} and
-                len(self.m_gau_mean) in {1, 2} and
-                len(self.m_gau_std) in {1, 2}), "Values must have a len of 1 or 2"
+        assert (len(self.t_size_frac) == 2 and
+                len(self.m_gau_mean) == 2 and
+                len(self.m_gau_std) == 2), "Range must have 2 values"
         self.dev = dev
         self.min_contrast = 0.8
         self.max_contrast = 1.2
