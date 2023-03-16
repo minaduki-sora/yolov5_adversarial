@@ -152,22 +152,22 @@ class ConfusionMatrix:
         detection_classes = detections[:, 5].int()
         iou = box_iou(labels[:, 1:], detections[:, :4])
 
-        x = torch.where(iou > self.iou_thres)
+        x = torch.where(iou > self.iou_thres)  #  x is a tuple of matching (x coord, y coord)
         if x[0].shape[0]:
-            matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()
+            matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # shape [num_matches, [x coord, y coord, iou]]
             if x[0].shape[0] > 1:
-                matches = matches[matches[:, 2].argsort()[::-1]]
-                matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-                matches = matches[matches[:, 2].argsort()[::-1]]
-                matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+                matches = matches[matches[:, 2].argsort()[::-1]]                   # rev sort by iou thres, so only max iou matches are kept for dups
+                matches = matches[np.unique(matches[:, 1], return_index=True)[1]]  # remove dup matches with y-coord
+                matches = matches[matches[:, 2].argsort()[::-1]]                   # rev sort by iou thres
+                matches = matches[np.unique(matches[:, 0], return_index=True)[1]]  # remove dup matches with x-coord
         else:
             matches = np.zeros((0, 3))
 
         n = matches.shape[0] > 0
-        m0, m1, _ = matches.transpose().astype(int)
+        m0, m1, _ = matches.transpose().astype(int)  # get x coord, y coord, [iou thres]
         for i, gc in enumerate(gt_classes):
             j = m0 == i
-            if n and sum(j) == 1:
+            if n and any(j):
                 self.matrix[detection_classes[m1[j]], gc] += 1  # correct
             else:
                 self.matrix[self.nc, gc] += 1  # true background
@@ -316,7 +316,8 @@ def wh_iou(wh1, wh2, eps=1e-7):
 
 @threaded
 def plot_pr_curve(px, py, ap, save_dir=Path('pr_curve.png'), names=()):
-    # Precision-recall curve
+    npy_path = str(save_dir)[:-3] + "npy"
+    np.save(npy_path, np.array([px, py, ap], dtype=object), allow_pickle=True)  # save arr vals for regen later
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
     py = np.stack(py, axis=1)
 
