@@ -32,7 +32,7 @@
         "bus"
     ],
     "n_classes": 4,
-    "n_epochs": 300,
+    "n_epochs": 450,
     "max_labels": 48,
     "start_lr": 0.03,
     "min_tv_loss": 0.1,
