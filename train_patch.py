@@ -89,7 +89,7 @@ class PatchTrainer:
                         shuffle=True),
             batch_size=cfg.batch_size,
             shuffle=True,
-            num_workers=10,
+            num_workers=4,
             pin_memory=True if self.dev.type == "cuda" else False)
         self.epoch_length = len(self.train_loader)
 
@@ -100,7 +100,7 @@ class PatchTrainer:
         if run_tb:
             while is_port_in_use(port) and port < 65535:
                 port += 1
-                print(f"Port {port} is currently in use. Switching to {port} for tensorboard logging")
+                print(f"Port {port - 1} is currently in use. Switching to {port} for tensorboard logging")
 
             tboard = program.TensorBoard()
             tboard.configure(argv=[None, "--logdir", log_dir, "--port", str(port)])
@@ -183,15 +183,16 @@ class PatchTrainer:
         for epoch in range(1, self.cfg.n_epochs + 1):
             out_patch_path = osp.join(patch_dir, f"e_{epoch}.png")
             ep_loss = 0
-            min_tv_loss = torch.tensor(self.cfg.min_tv_loss).to(self.dev)
+            min_tv_loss = torch.tensor(self.cfg.min_tv_loss, device=self.dev)
+            zero_tensor = torch.tensor([0], device=self.dev)
 
             for i_batch, (img_batch, lab_batch) in tqdm(enumerate(self.train_loader),
                                                         desc=f'Running train epoch {epoch}',
                                                         total=self.epoch_length):
                 with autograd.set_detect_anomaly(mode=True if self.cfg.debug_mode else False):
-                    img_batch = img_batch.to(self.dev)
-                    lab_batch = lab_batch.to(self.dev)
-                    adv_patch = adv_patch_cpu.to(self.dev)
+                    img_batch = img_batch.to(self.dev, non_blocking=True)
+                    lab_batch = lab_batch.to(self.dev, non_blocking=True)
+                    adv_patch = adv_patch_cpu.to(self.dev, non_blocking=True)
                     adv_batch_t = self.patch_transformer(
                         adv_patch, lab_batch, self.cfg.model_in_sz, 
                         use_mul_add_gau=self.cfg.use_mul_add_gau,
@@ -210,9 +211,9 @@ class PatchTrainer:
                     with autocast() if self.cfg.use_amp else nullcontext():
                         output = self.model(p_img_batch)[0]
                         max_prob = self.prob_extractor(output)
-                        sal = self.sal_loss(adv_patch) if self.cfg.sal_mult != 0 else torch.tensor([0], device=self.dev)
-                        nps = self.nps_loss(adv_patch) if self.cfg.nps_mult != 0 else torch.tensor([0], device=self.dev)
-                        tv = self.tv_loss(adv_patch) if self.cfg.tv_mult != 0 else torch.tensor([0], device=self.dev)
+                        sal = self.sal_loss(adv_patch) if self.cfg.sal_mult != 0 else zero_tensor
+                        nps = self.nps_loss(adv_patch) if self.cfg.nps_mult != 0 else zero_tensor
+                        tv = self.tv_loss(adv_patch) if self.cfg.tv_mult != 0 else zero_tensor
 
                     det_loss = torch.mean(max_prob)
                     sal_loss = sal * self.cfg.sal_mult
