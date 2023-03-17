@@ -287,7 +287,7 @@ class PatchTester:
         transforms_resize = transforms.Resize(model_in_sz)
         transforms_totensor = transforms.ToTensor()
         transforms_topil = transforms.ToPILImage('RGB')
-        ones_tensor = torch.ones([1, 5]).to(self.dev)
+        zeros_tensor = torch.zeros([1, 5]).to(self.dev)
         for imgfile in tqdm.tqdm(img_paths):
             img_name = osp.splitext(imgfile)[0].split('/')[-1]
             imgfile_path = Path(imgfile)
@@ -362,8 +362,8 @@ class PatchTester:
                 else:
                     padded_img_pil.save(osp.join(clean_img_dir, cleanname))
 
-            # use a filler ones array for no dets
-            label = np.asarray(labels) if labels else np.ones([5])
+            # use a filler zeros array for no dets
+            label = np.asarray(labels) if labels else np.zeros([1, 5])
             label = torch.from_numpy(label).float()
             if label.dim() == 1:
                 label = label.unsqueeze(0)
@@ -372,7 +372,7 @@ class PatchTester:
             # Apply proper patches
             img_fake_batch = padded_img_tensor
             lab_fake_batch = label.unsqueeze(0).to(self.dev)
-            if len(lab_fake_batch[0]) == 1 and torch.equal(lab_fake_batch[0], ones_tensor):
+            if len(lab_fake_batch[0]) == 1 and torch.equal(lab_fake_batch[0], zeros_tensor):
                 # no det, use images without patches
                 p_tensor_batch = padded_img_tensor
             else:
@@ -431,7 +431,7 @@ class PatchTester:
 
             #######################################
             # Apply random patches
-            if len(lab_fake_batch[0]) == 1 and torch.equal(lab_fake_batch[0], ones_tensor):
+            if len(lab_fake_batch[0]) == 1 and torch.equal(lab_fake_batch[0], zeros_tensor):
                 # no det, use images without patches
                 p_tensor_batch = padded_img_tensor
             else:

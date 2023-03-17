@@ -93,7 +93,7 @@ class PatchTransformer(nn.Module):
         cls_mask = cls_mask.unsqueeze(-1)
         # [bsize, max_bbox_labels, pchannel, pheight, pwidth]
         cls_mask = cls_mask.expand(-1, -1, -1, -1, adv_batch.size(4))
-        msk_batch = self.tensor(cls_mask.size()).fill_(1) - cls_mask
+        msk_batch = self.tensor(cls_mask.size()).fill_(1)
 
         # Pad patch and mask to image dimensions
         patch_pad = nn.ConstantPad2d(

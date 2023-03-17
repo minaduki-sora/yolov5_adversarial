@@ -77,7 +77,7 @@ class YOLODataset(Dataset):
         lab_path = self.label_paths[idx]
         image = Image.open(img_path).convert('RGB')
         # check to see if label file contains any annotation data
-        label = np.loadtxt(lab_path) if osp.getsize(lab_path) else np.ones([5])
+        label = np.loadtxt(lab_path) if osp.getsize(lab_path) else np.zeros([1, 5])
         if label.ndim == 1:
             label = np.expand_dims(label, axis=0)
         # sort in reverse by bbox area
@@ -85,7 +85,7 @@ class YOLODataset(Dataset):
         # selectively get classes if filter_class_ids is not None
         if self.filter_class_ids is not None:
             label = label[np.isin(label[:, 0], self.filter_class_ids)]
-            label = label if len(label) > 0 else np.ones([1, 5])
+            label = label if len(label) > 0 else np.zeros([1, 5])
 
         label = torch.from_numpy(label).float()
         image, label = self.pad_and_scale(image, label)
@@ -93,7 +93,7 @@ class YOLODataset(Dataset):
         if self.min_pixel_area is not None:
             label = label[(label[:, 3] * label[:, 4]) >= (
                 self.min_pixel_area / (self.model_in_sz[0] * self.model_in_sz[1]))]
-            label = label if len(label) > 0 else torch.ones([1, 5])
+            label = label if len(label) > 0 else torch.zeros([1, 5])
         image = transforms.ToTensor()(image)
         label = self.pad_label(label)
         return image, label
@@ -126,11 +126,11 @@ class YOLODataset(Dataset):
 
     def pad_label(self, label: torch.Tensor) -> torch.Tensor:
         """
-        Pad labels if fewer labels than max_n_labels present
+        Pad labels with zeros if fewer labels than max_n_labels present
         """
         pad_size = self.max_n_labels - label.shape[0]
         if pad_size > 0:
-            padded_lab = F.pad(label, (0, 0, 0, pad_size), value=1)
+            padded_lab = F.pad(label, (0, 0, 0, pad_size), value=0)
         else:
             padded_lab = label[:self.max_n_labels]
         return padded_lab

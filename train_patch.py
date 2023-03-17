@@ -285,7 +285,7 @@ class PatchTrainer:
 
         m_h, m_w = self.cfg.model_in_sz
         cls_id = self.cfg.objective_class_id
-        ones_tensor = torch.ones([1, 5]).to(self.dev)
+        zeros_tensor = torch.zeros([1, 5]).to(self.dev)
         #### iterate through all images ####
         for imgfile in tqdm(img_paths, desc=f'Running val epoch {epoch}'):
             img_name = osp.splitext(imgfile)[0].split('/')[-1]
@@ -317,8 +317,8 @@ class PatchTrainer:
                     all_labels[-1], padded_img, self.cfg.class_list)
                 padded_img_drawn.save(osp.join(self.cfg.log_dir, "val_clean_imgs", img_name + ".jpg"))
 
-            # use a filler ones array for no dets
-            label = np.asarray(labels) if labels else np.ones([5])
+            # use a filler zeros array for no dets
+            label = np.asarray(labels) if labels else np.zeros([1, 5])
             label = torch.from_numpy(label).float()
             if label.dim() == 1:
                 label = label.unsqueeze(0)
@@ -328,7 +328,7 @@ class PatchTrainer:
             img_fake_batch = padded_img_tensor
             lab_fake_batch = label.unsqueeze(0).to(self.dev)
 
-            if len(lab_fake_batch[0]) == 1 and torch.equal(lab_fake_batch[0], ones_tensor):
+            if len(lab_fake_batch[0]) == 1 and torch.equal(lab_fake_batch[0], zeros_tensor):
                 # no det, use images without patches
                 p_tensor_batch = padded_img_tensor
             else:
