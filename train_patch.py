@@ -279,6 +279,8 @@ class PatchTrainer:
         img_paths = glob.glob(osp.join(self.cfg.val_image_dir, "*"))
         img_paths = sorted([p for p in img_paths if osp.splitext(p)[-1] in IMG_EXTNS])
 
+        train_t_size_frac = self.patch_transformer.t_size_frac
+        self.patch_transformer.t_size_frac = [0.3, 0.3]  # use a frac of 0.3 for validation
         # to calc confusion matrixes and attack success rates later
         all_labels = []
         all_patch_preds = []
@@ -371,7 +373,8 @@ class PatchTrainer:
         self.writer.add_scalar("val_asr_per_epoch/area_large", asr_l, epoch)
         self.writer.add_scalar("val_asr_per_epoch/area_all", asr_a, epoch)
         del adv_batch_t, padded_img_tensor, p_tensor_batch
-        torch.cuda.empty_cache() 
+        torch.cuda.empty_cache()
+        self.patch_transformer.t_size_frac = train_t_size_frac
 
 
 def main():
