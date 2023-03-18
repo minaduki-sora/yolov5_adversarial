@@ -1,3 +1,4 @@
 # specific to adv_patch_gen, yolov5 vase requirements should be installed as well
 easydict==1.10
-tensorboardX==2.5.1
+pycocotools==2.0.6
+tensorboardX==2.6
