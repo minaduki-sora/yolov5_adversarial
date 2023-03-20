@@ -32,11 +32,11 @@
         "bus"
     ],
     "n_classes": 4,
-    "n_epochs": 450,
+    "n_epochs": 420,
     "max_labels": 48,
     "start_lr": 0.03,
     "min_tv_loss": 0.1,
-    "sal_mult": 1.2,
+    "sal_mult": 1.0,
     "tv_mult": 2.5,
     "nps_mult": 0,
     "batch_size": 8,
