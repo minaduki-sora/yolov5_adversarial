@@ -59,7 +59,8 @@ class PatchTrainer:
         model = DetectMultiBackend(cfg.weights_file, device=self.dev, dnn=False, data=None, fp16=False)
         self.model = model.eval()
 
-        self.patch_transformer = PatchTransformer(cfg.target_size_frac, cfg.mul_gau_mean, cfg.mul_gau_std, self.dev).to(self.dev)
+        self.patch_transformer = PatchTransformer(
+            cfg.target_size_frac, cfg.mul_gau_mean, cfg.mul_gau_std, cfg.x_off_loc, cfg.y_off_loc, self.dev).to(self.dev)
         self.patch_applier = PatchApplier(cfg.patch_alpha).to(self.dev)
         self.prob_extractor = MaxProbExtractor(cfg).to(self.dev)
         self.sal_loss = SaliencyLoss().to(self.dev)
@@ -111,29 +112,30 @@ class PatchTrainer:
             return SummaryWriter(log_dir)
         return SummaryWriter()
 
-    def generate_patch(self, patch_type: str) -> torch.Tensor:
+    def generate_patch(self, patch_type: str, pil_img_mode: str = "RGB") -> torch.Tensor:
         """
         Generate a random patch as a starting point for optimization.
 
         Arguments:
             patch_type: Can be 'gray' or 'random'. Whether or not generate a gray or a random patch.
+            pil_img_mode: Pillow image modes i.e. RGB, L https://pillow.readthedocs.io/en/latest/handbook/concepts.html#modes
         """
+        p_c = 1 if pil_img_mode in {"L"} else 3
         p_w, p_h = self.cfg.patch_size
         if patch_type == 'gray':
-            adv_patch_cpu = torch.full((3, p_h, p_w), 0.5)
+            adv_patch_cpu = torch.full((p_c, p_h, p_w), 0.5)
         elif patch_type == 'random':
-            adv_patch_cpu = torch.rand((3, p_h, p_w))
-
+            adv_patch_cpu = torch.rand((p_c, p_h, p_w))
         return adv_patch_cpu
 
-    def read_image(self, path):
+    def read_image(self, path, pil_img_mode: str = "RGB") -> torch.Tensor:
         """
         Read an input image to be used as a patch
-
-        :param path: Path to the image to be read.
-        :return: Returns the transformed patch as a pytorch Tensor.
+        
+        Arguments:
+            path: Path to the image to be read.
         """
-        patch_img = Image.open(path).convert('RGB')
+        patch_img = Image.open(path).convert(pil_img_mode)
         patch_img = transforms.Resize(self.cfg.patch_size)(patch_img)
         adv_patch_cpu = transforms.ToTensor()(patch_img)
         return adv_patch_cpu
@@ -166,12 +168,15 @@ class PatchTrainer:
                 f"Loss target {loss_target} not been implemented")
 
         # Generate init patch
+        supported_modes = {"L", "RGB"}
+        if self.cfg.patch_img_mode not in supported_modes:
+            raise NotImplementedError(f"Currently only {supported_modes} channels supported")
         if self.cfg.patch_src == 'gray':
-            adv_patch_cpu = self.generate_patch("gray")
+            adv_patch_cpu = self.generate_patch("gray", self.cfg.patch_img_mode)
         elif self.cfg.patch_src == 'random':
-            adv_patch_cpu = self.generate_patch("random")
+            adv_patch_cpu = self.generate_patch("random", self.cfg.patch_img_mode)
         else:
-            adv_patch_cpu = self.read_image(self.cfg.patch_src)
+            adv_patch_cpu = self.read_image(self.cfg.patch_src, self.cfg.patch_img_mode)
         adv_patch_cpu.requires_grad = True
 
         optimizer = optim.Adam(
@@ -197,11 +202,10 @@ class PatchTrainer:
                         adv_patch, lab_batch, self.cfg.model_in_sz, 
                         use_mul_add_gau=self.cfg.use_mul_add_gau,
                         do_transforms=self.cfg.transform_patches,
-                        do_rotate=self.cfg.rotate_patches, rand_loc=False)
-                    p_img_batch = self.patch_applier(
-                        img_batch, adv_batch_t)
-                    p_img_batch = F.interpolate(
-                        p_img_batch, (self.cfg.model_in_sz[0], self.cfg.model_in_sz[1]))
+                        do_rotate=self.cfg.rotate_patches, 
+                        rand_loc=self.cfg.random_patch_loc)
+                    p_img_batch = self.patch_applier(img_batch, adv_batch_t)
+                    p_img_batch = F.interpolate(p_img_batch, (self.cfg.model_in_sz[0], self.cfg.model_in_sz[1]))
 
                     if self.cfg.debug_mode:
                         img = p_img_batch[0, :, :, ]
@@ -226,8 +230,9 @@ class PatchTrainer:
                     loss.backward()
                     optimizer.step()
                     optimizer.zero_grad(set_to_none=True)
-                    # keep patch in image range
-                    adv_patch_cpu.data.clamp_(0, 1)
+                    # keep patch in cfg image pixel range
+                    pl, ph = self.cfg.patch_pixel_range
+                    adv_patch_cpu.data.clamp_(pl/255, ph/255)
 
                     if i_batch % self.cfg.tensorboard_batch_log_interval == 0:
                         iteration = self.epoch_length * epoch + i_batch
@@ -255,7 +260,7 @@ class PatchTrainer:
 
             # save patch after every patch_save_epoch_freq epochs
             if epoch % self.cfg.patch_save_epoch_freq == 0:
-                img = transforms.ToPILImage('RGB')(adv_patch_cpu)
+                img = transforms.ToPILImage(self.cfg.patch_img_mode)(adv_patch_cpu)
                 img.save(out_patch_path)
                 del adv_batch_t, output, max_prob, det_loss, p_img_batch, sal_loss, nps_loss, tv_loss, loss
                 # torch.cuda.empty_cache()  # note emptying cache adds too much overhead
@@ -271,7 +276,7 @@ class PatchTrainer:
         Calculates the attack success rate according for the patch with respect to different bounding box areas
         """
         # load patch from file
-        patch_img = Image.open(patchfile).convert('RGB')
+        patch_img = Image.open(patchfile).convert(self.cfg.patch_img_mode)
         patch_img = transforms.Resize(self.cfg.patch_size)(patch_img)
         adv_patch_cpu = transforms.ToTensor()(patch_img)
         adv_patch = adv_patch_cpu.to(self.dev)
@@ -339,7 +344,8 @@ class PatchTrainer:
                     adv_patch, lab_fake_batch, self.cfg.model_in_sz,
                     use_mul_add_gau=self.cfg.use_mul_add_gau,
                     do_transforms=self.cfg.transform_patches,
-                    do_rotate=self.cfg.rotate_patches, rand_loc=False)
+                    do_rotate=self.cfg.rotate_patches, 
+                    rand_loc=self.cfg.random_patch_loc)
                 p_tensor_batch = self.patch_applier(img_fake_batch, adv_batch_t)
 
             pred = self.model(p_tensor_batch)

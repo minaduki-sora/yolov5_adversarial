@@ -76,7 +76,7 @@ class PatchTester:
         model = DetectMultiBackend(cfg.weights_file, device=self.dev, dnn=False, data=None, fp16=False)
         self.model = model.eval().to(self.dev)
         self.patch_transformer = PatchTransformer(
-            cfg.target_size_frac, cfg.mul_gau_mean, cfg.mul_gau_std, self.dev).to(self.dev)
+            cfg.target_size_frac, cfg.mul_gau_mean, cfg.mul_gau_std, cfg.x_off_loc, cfg.y_off_loc, self.dev).to(self.dev)
         self.patch_applier = PatchApplier(
             cfg.patch_alpha).to(self.dev)
 
@@ -226,15 +226,10 @@ class PatchTester:
         model_in_sz = self.cfg.model_in_sz
         m_h, m_w = model_in_sz
 
-        patch_img = Image.open(self.cfg.patchfile).convert('RGB')
+        patch_img = Image.open(self.cfg.patchfile).convert(self.cfg.patch_img_mode)
         patch_img = transforms.Resize(patch_size)(patch_img)
         adv_patch_cpu = transforms.ToTensor()(patch_img)
         adv_patch = adv_patch_cpu.to(self.dev)
-
-        clean_gt_results = []
-        clean_results = []
-        noise_results = []
-        patch_results = []
 
         # make dirs
         clean_img_dir = osp.join(self.cfg.savedir, 'clean/', 'images/')
@@ -265,7 +260,7 @@ class PatchTester:
 
         # save patch to self.cfg.savedir
         patch_save_path = osp.join(self.cfg.savedir, self.cfg.patchfile.split('/')[-1])
-        transforms.ToPILImage('RGB')(adv_patch_cpu).save(patch_save_path)
+        transforms.ToPILImage(self.cfg.patch_img_mode)(adv_patch_cpu).save(patch_save_path)
 
         img_paths = glob.glob(osp.join(self.cfg.imgdir, "*"))
         img_paths = sorted(
@@ -274,6 +269,12 @@ class PatchTester:
         print("Total num images:", len(img_paths))
         img_paths = img_paths[:max_images]
         print("Considered num images:", len(img_paths))
+
+        # stores json results
+        clean_gt_results = []
+        clean_results = []
+        noise_results = []
+        patch_results = []
 
         clean_image_annotations = []
         # to calc confusion matrixes and attack success rates later
@@ -379,9 +380,10 @@ class PatchTester:
                 # transform patch and add it to image
                 adv_batch_t = self.patch_transformer(
                     adv_patch, lab_fake_batch, model_in_sz,
-                    use_mul_add_gau=self.cfg.use_mul_add_gau,
-                    do_transforms=self.cfg.transform_patches,
-                    do_rotate=self.cfg.rotate_patches, rand_loc=False)
+                    use_mul_add_gau=False,
+                    do_transforms=False,
+                    do_rotate=False, 
+                    rand_loc=False)
                 p_tensor_batch = self.patch_applier(img_fake_batch, adv_batch_t)
 
             properpatchedname = img_name + ".jpg"
@@ -439,9 +441,10 @@ class PatchTester:
                 random_patch = torch.rand(adv_patch_cpu.size()).to(self.dev)
                 adv_batch_t = self.patch_transformer(
                     random_patch, lab_fake_batch, model_in_sz,
-                    use_mul_add_gau=self.cfg.use_mul_add_gau,
-                    do_transforms=self.cfg.transform_patches,
-                    do_rotate=self.cfg.rotate_patches, rand_loc=False)
+                    use_mul_add_gau=False,
+                    do_transforms=False,
+                    do_rotate=False, 
+                    rand_loc=False)
                 p_tensor_batch = self.patch_applier(img_fake_batch, adv_batch_t)
 
             randompatchedname = img_name + ".jpg"
@@ -541,7 +544,7 @@ class PatchTester:
         eval_coco_metrics(clean_gt_json, clean_json, clean_txt_path)
 
         print(f"{BColors.HEADER}### Metrics for images with correct patches ###{BColors.ENDC}")
-        coco_map_patch = eval_coco_metrics(clean_gt_json, patch_json, patch_txt_path)
+        coco_map_patch = eval_coco_metrics(clean_gt_json, patch_json, patch_txt_path) if patch_results else []
 
         asr_s, asr_m, asr_l, asr_a = PatchTester.calc_asr(
             all_labels, all_patch_preds, self.cfg.class_list, cls_id=cls_id, class_agnostic=class_agnostic)
@@ -556,7 +559,7 @@ class PatchTester:
         metrics_patch = {"coco_map": coco_map_patch, "asr": [asr_s, asr_m, asr_l, asr_a]}
 
         print(f"{BColors.HEADER}### Metrics for images with random noise patches ###{BColors.ENDC}")
-        coco_map_noise = eval_coco_metrics(clean_gt_json, noise_json, noise_txt_path)
+        coco_map_noise = eval_coco_metrics(clean_gt_json, noise_json, noise_txt_path) if clean_results else []
 
         asr_s, asr_m, asr_l, asr_a = PatchTester.calc_asr(
             all_labels, all_noise_preds, self.cfg.class_list, cls_id=cls_id, class_agnostic=class_agnostic)
@@ -568,7 +571,7 @@ class PatchTester:
             asr_str += f" Attack success rate (@conf={conf_thresh}) | class_agnostic={class_agnostic} | area=   all | = {asr_a:.3f}\n"
             print(asr_str)
             f_noise.write(asr_str + "\n")
-        metrics_noise = {"coco_map": coco_map_noise, "asr": [asr_s, asr_m, asr_l, asr_a]}
+        metrics_noise = {"coco_map": coco_map_noise, "asr": [asr_s, asr_m, asr_l, asr_a]} if noise_results else []
 
         if save_image and save_video:
             patch_vid = osp.join(video_dir, "patch.mp4")
