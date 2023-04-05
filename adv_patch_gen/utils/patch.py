@@ -22,6 +22,8 @@ class PatchTransformer(nn.Module):
                  t_size_frac: Union[float, Tuple[float, float]] = 0.3,
                  mul_gau_mean: Union[float, Tuple[float, float]] = (0.5, 0.8),
                  mul_gau_std: Union[float, Tuple[float, float]] = 0.1,
+                 x_off_loc: Tuple[float, float] = [-0.25, 0.25],
+                 y_off_loc: Tuple[float, float] = [-0.25, 0.25],
                  dev: torch.device = torch.device("cuda:0")):
         super(PatchTransformer, self).__init__()
         # convert to duplicated lists/tuples to unpack and send to np.random.uniform
@@ -31,6 +33,8 @@ class PatchTransformer(nn.Module):
         assert (len(self.t_size_frac) == 2 and
                 len(self.m_gau_mean) == 2 and
                 len(self.m_gau_std) == 2), "Range must have 2 values"
+        self.x_off_loc = x_off_loc
+        self.y_off_loc = y_off_loc
         self.dev = dev
         self.min_contrast = 0.8
         self.max_contrast = 1.2
@@ -45,11 +49,11 @@ class PatchTransformer(nn.Module):
 
     def forward(self, adv_patch, lab_batch, model_in_sz, use_mul_add_gau=True, do_transforms=True, do_rotate=True, rand_loc=True):
         # add gaussian noise to reduce contrast with a stohastic process
-        c, h, w = adv_patch.shape
+        p_c, p_h, p_w = adv_patch.shape
         if use_mul_add_gau:
-            adv_patch = adv_patch * \
-                torch.normal(np.random.uniform(*self.m_gau_mean), np.random.uniform(*self.m_gau_std), (c, h, w), device=self.dev) + \
-                torch.normal(0, 0.001, (c, h, w), device=self.dev)
+            mul_gau = torch.normal(np.random.uniform(*self.m_gau_mean), np.random.uniform(*self.m_gau_std), (p_c, p_h, p_w), device=self.dev)
+            add_gau = torch.normal(0, 0.001, (p_c, p_h, p_w), device=self.dev) 
+            adv_patch = adv_patch * mul_gau + add_gau
         adv_patch = self.medianpooler(adv_patch.unsqueeze(0))
         m_h, m_w = model_in_sz
         # Determine size of padding
@@ -87,7 +91,7 @@ class PatchTransformer(nn.Module):
 
         # Where the label class_id is 1 we don't want a patch (padding) --> fill mask with zero's
         cls_ids = lab_batch[..., 0].unsqueeze(-1)  # equiv to torch.narrow(lab_batch, 2, 0, 1)
-        cls_mask = cls_ids.expand(-1, -1, 3)
+        cls_mask = cls_ids.expand(-1, -1, p_c)
         cls_mask = cls_mask.unsqueeze(-1)
         cls_mask = cls_mask.expand(-1, -1, -1, adv_batch.size(3))
         cls_mask = cls_mask.unsqueeze(-1)
@@ -125,10 +129,10 @@ class PatchTransformer(nn.Module):
         targetoff_y = lab_batch[:, :, 4].view(np.prod(batch_size))
         if rand_loc:
             off_x = targetoff_x * \
-                (self.tensor(targetoff_x.size()).uniform_(-0.4, 0.4))
+                (self.tensor(targetoff_x.size()).uniform_(*self.x_off_loc))
             target_x = target_x + off_x
             off_y = targetoff_y * \
-                (self.tensor(targetoff_y.size()).uniform_(-0.4, 0.4))
+                (self.tensor(targetoff_y.size()).uniform_(*self.x_off_loc))
             target_y = target_y + off_y
         scale = target_size / current_patch_size
         scale = scale.view(anglesize)
