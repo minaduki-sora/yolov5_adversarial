@@ -615,6 +615,9 @@ def main():
     parser.add_argument('--sd', '--savedir', type=str,
                         dest="savedir", default='runs/test_adversarial',
                         help='Path to save dir for saving testing results (default: %(default)s)')
+    parser.add_argument('--conf-thresh', type=float,
+                        dest="conf_thresh", default=0.4, required=False,
+                        help='Conf threshold for detection (default: %(default)s)')
     parser.add_argument('--save-txt',
                         dest="savetxt", action='store_true',
                         help='Save txt files with predicted labels in yolo fmt for later inspection')
@@ -663,8 +666,8 @@ def main():
 
     print(f"{BColors.OKBLUE} Test Arguments: {args} {BColors.ENDC}")
     tester = PatchTester(cfg)
-    tester.test(save_txt=args.savetxt, save_image=args.saveimg, class_agnostic=args.class_agnostic,
-                cls_id=args.target_class, min_pixel_area=args.min_pixel_area, 
+    tester.test(conf_thresh=args.conf_thresh, save_txt=args.savetxt, save_image=args.saveimg, 
+                class_agnostic=args.class_agnostic, cls_id=args.target_class, min_pixel_area=args.min_pixel_area, 
                 save_plots=args.saveplots, save_video=args.savevideo)
 
 
