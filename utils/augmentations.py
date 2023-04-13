@@ -3,6 +3,8 @@
 Image augmentation functions
 """
 
+import os
+import glob
 import math
 import random
 
@@ -50,6 +52,103 @@ class Albumentations:
             new = self.transform(image=im, bboxes=labels[:, 1:], class_labels=labels[:, 0])  # transformed
             im, labels = new['image'], np.array([[c, *b] for c, b in zip(new['class_labels'], new['bboxes'])])
         return im, labels
+
+
+class BboxPatcher:
+    def __init__(self,
+                 patch_dir,
+                 rotation_range=(-20, 20),
+                 scale_range=(0.10, 0.30),
+                 brightness_range=(0.9, 1.1),
+                 contrast_range=(0.8, 1.2),
+                 m_gau_mean=(0.7, 0.9),
+                 m_gau_std=(0.1, 0.1),
+                 patch_apply_prob=0.5):
+        """
+        patch_dir: dir with patches
+        rotation_range: rotation range in degrees
+        scale_range: scale range in float
+        """
+        self.patches = []
+        for patch_path in glob.glob(os.path.join(patch_dir, "*")):
+            if os.path.splitext(patch_path)[1].lower() in {".jpeg", ".jpg", ".png"}:
+                patch = cv2.imread(patch_path)
+                self.patches.append(TF.to_tensor(patch))
+        self.rotation_range = rotation_range
+        self.scale_range = scale_range
+        self.brightness_range = brightness_range
+        self.contrast_range = contrast_range
+        self.noise_factor = 0.01
+        self.m_gau_mean = m_gau_mean
+        self.m_gau_std = m_gau_std
+        self.patch_apply_prob = patch_apply_prob
+
+    def __call__(self, image: np.ndarray, bbox_coords: np.ndarray):
+        """
+        Arguments:
+            image: np.ndarray, image of shape H,W,C
+            bbox_coords: np.ndarray, [[cls,x1,y1,x2,y2], ...]
+        """
+        img_h, img_w = image.shape[:2]
+        image = TF.to_tensor(image)
+
+        for bbox in bbox_coords:
+            if np.random.random() < self.patch_apply_prob:
+                continue
+            patch = self.patches[np.random.randint(0, len(self.patches))]
+            # add and mul with gaussian noise
+            pc, ph, pw = patch.shape
+            mul_gau = torch.normal(np.random.uniform(*self.m_gau_mean),
+                                   np.random.uniform(*self.m_gau_std), (pc, ph, pw))
+            add_gau = torch.normal(0, 0.001, (pc, ph, pw))
+            patch = patch * mul_gau + add_gau
+
+            # adjust brightness, contrast & add uniform noise
+            patch = TF.adjust_brightness(patch, np.random.uniform(*self.brightness_range))
+            patch = TF.adjust_contrast(patch, np.random.uniform(*self.contrast_range))
+            patch += torch.FloatTensor(patch.size()).uniform_(-1, 1) * self.noise_factor
+
+            # Randomly select rotation and scale parameters
+            rotation = np.random.uniform(*self.rotation_range)
+            scale = np.random.uniform(*self.scale_range)
+
+            _, x1, y1, x2, y2 = map(int, bbox)
+            # Calculate the width and height of the bounding box
+            bbox_width = x2 - x1
+            bbox_height = y2 - y1
+
+            # Calculate the width and height of the patch after scaling
+            psize = max(int((bbox_width * bbox_height * scale)**(1 / 2)), 1)
+            # patch is square
+            patch_scaled_w = psize
+            patch_scaled_h = psize
+
+            # resize patch
+            patch = TF.resize(patch, (patch_scaled_h, patch_scaled_w), antialias=True)
+
+            # create patch mask
+            patch_mask = torch.ones_like(patch)
+
+            # rotate patch and its mask
+            patch = TF.rotate(patch, rotation, expand=True, fill=0)
+            patch_mask = TF.rotate(patch_mask, rotation, expand=True, fill=0)
+            patch_scaled_h, patch_scaled_w = patch.shape[1:]  # expanded rotation changes size
+
+            # Calculate the position to place the patch at the center of the bbox
+            x_pos = int(x1 + (bbox_width - patch_scaled_w) / 2)
+            y_pos = int(y1 + (bbox_height - patch_scaled_h) / 2)
+            # pad patch and its mask
+            padded_patch = TF.pad(patch, (x_pos, y_pos,
+                                          img_w - (x_pos + patch_scaled_w),
+                                          img_h - (y_pos + patch_scaled_h)))
+            padded_patch_mask = TF.pad(patch_mask, (x_pos, y_pos,
+                                                    img_w - (x_pos + patch_scaled_w),
+                                                    img_h - (y_pos + patch_scaled_h)))
+
+            # Apply the patch to the image
+            image = image * (1 - padded_patch_mask) + padded_patch * padded_patch_mask
+
+        return np.asarray(T.ToPILImage()(image))
 
 
 def normalize(x, mean=IMAGENET_MEAN, std=IMAGENET_STD, inplace=False):
