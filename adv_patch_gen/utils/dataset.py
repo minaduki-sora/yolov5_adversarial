@@ -37,6 +37,7 @@ class YOLODataset(Dataset):
                  max_labels: int,
                  model_in_sz: Tuple[int, int],
                  use_even_odd_images: str = "all",
+                 transform: Optional[torch.nn.Module] = None, 
                  filter_class_ids: Optional[np.array] = None,
                  min_pixel_area: Optional[int] = None,
                  shuffle: bool = True):
@@ -65,8 +66,9 @@ class YOLODataset(Dataset):
         self.model_in_sz = model_in_sz
         self.shuffle = shuffle
         self.max_n_labels = max_labels
-        self.min_pixel_area = min_pixel_area
+        self.transform = transform
         self.filter_class_ids = np.asarray(filter_class_ids) if filter_class_ids is not None else None
+        self.min_pixel_area = min_pixel_area
 
     def __len__(self):
         return len(self.image_paths)
@@ -89,6 +91,12 @@ class YOLODataset(Dataset):
 
         label = torch.from_numpy(label).float()
         image, label = self.pad_and_scale(image, label)
+        if self.transform:
+            image = self.transform(image)
+            if np.random.random() < 0.5:  # rand horizontal flip
+                image = image.transpose(Image.FLIP_LEFT_RIGHT)
+                if label.shape:
+                    label[:, 1] = 1 - label[:, 1]
         # filter boxes by bbox area pixels compared to the model in size (640x640 by default)
         if self.min_pixel_area is not None:
             label = label[(label[:, 3] * label[:, 4]) >= (

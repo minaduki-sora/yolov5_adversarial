@@ -20,7 +20,7 @@ import torch
 import torch.nn.functional as F
 from torch import optim, autograd
 from torch.cuda.amp import autocast
-from torchvision import transforms
+from torchvision import transforms as T
 
 from tensorboardX import SummaryWriter
 from tensorboard import program
@@ -78,13 +78,22 @@ class PatchTrainer:
         for cfg_key, cfg_val in cfg.items():
             self.writer.add_text(cfg_key, str(cfg_val))
 
+        # setting train image augmentations
+        transforms = None
+        if cfg.augment_image:
+            transforms = T.Compose(
+                [T.GaussianBlur(kernel_size=(3, 3), sigma=(0.1, 1)),
+                T.ColorJitter(brightness=.2, hue=.04, contrast=.1),
+                T.RandomAdjustSharpness(sharpness_factor=2)])
+
         # load training dataset
         self.train_loader = torch.utils.data.DataLoader(
-            YOLODataset(cfg.image_dir,
-                        cfg.label_dir,
-                        cfg.max_labels,
-                        cfg.model_in_sz,
-                        cfg.use_even_odd_images,
+            YOLODataset(image_dir=cfg.image_dir,
+                        label_dir=cfg.label_dir,
+                        max_labels=cfg.max_labels,
+                        model_in_sz=cfg.model_in_sz,
+                        use_even_odd_images=cfg.use_even_odd_images,
+                        transform=transforms,
                         filter_class_ids=cfg.objective_class_id,
                         min_pixel_area=cfg.min_pixel_area,
                         shuffle=True),
@@ -131,13 +140,13 @@ class PatchTrainer:
     def read_image(self, path, pil_img_mode: str = "RGB") -> torch.Tensor:
         """
         Read an input image to be used as a patch
-        
+
         Arguments:
             path: Path to the image to be read.
         """
         patch_img = Image.open(path).convert(pil_img_mode)
-        patch_img = transforms.Resize(self.cfg.patch_size)(patch_img)
-        adv_patch_cpu = transforms.ToTensor()(patch_img)
+        patch_img = T.Resize(self.cfg.patch_size)(patch_img)
+        adv_patch_cpu = T.ToTensor()(patch_img)
         return adv_patch_cpu
 
     def train(self) -> None:
@@ -199,17 +208,17 @@ class PatchTrainer:
                     lab_batch = lab_batch.to(self.dev, non_blocking=True)
                     adv_patch = adv_patch_cpu.to(self.dev, non_blocking=True)
                     adv_batch_t = self.patch_transformer(
-                        adv_patch, lab_batch, self.cfg.model_in_sz, 
+                        adv_patch, lab_batch, self.cfg.model_in_sz,
                         use_mul_add_gau=self.cfg.use_mul_add_gau,
                         do_transforms=self.cfg.transform_patches,
-                        do_rotate=self.cfg.rotate_patches, 
+                        do_rotate=self.cfg.rotate_patches,
                         rand_loc=self.cfg.random_patch_loc)
                     p_img_batch = self.patch_applier(img_batch, adv_batch_t)
                     p_img_batch = F.interpolate(p_img_batch, (self.cfg.model_in_sz[0], self.cfg.model_in_sz[1]))
 
                     if self.cfg.debug_mode:
                         img = p_img_batch[0, :, :, ]
-                        img = transforms.ToPILImage()(img.detach().cpu())
+                        img = T.ToPILImage()(img.detach().cpu())
                         img.save(osp.join(self.cfg.log_dir, "train_patch_applied_imgs", f"b_{i_batch}.jpg"))
 
                     with autocast() if self.cfg.use_amp else nullcontext():
@@ -232,7 +241,7 @@ class PatchTrainer:
                     optimizer.zero_grad(set_to_none=True)
                     # keep patch in cfg image pixel range
                     pl, ph = self.cfg.patch_pixel_range
-                    adv_patch_cpu.data.clamp_(pl/255, ph/255)
+                    adv_patch_cpu.data.clamp_(pl / 255, ph / 255)
 
                     if i_batch % self.cfg.tensorboard_batch_log_interval == 0:
                         iteration = self.epoch_length * epoch + i_batch
@@ -260,11 +269,11 @@ class PatchTrainer:
 
             # save patch after every patch_save_epoch_freq epochs
             if epoch % self.cfg.patch_save_epoch_freq == 0:
-                img = transforms.ToPILImage(self.cfg.patch_img_mode)(adv_patch_cpu)
+                img = T.ToPILImage(self.cfg.patch_img_mode)(adv_patch_cpu)
                 img.save(out_patch_path)
                 del adv_batch_t, output, max_prob, det_loss, p_img_batch, sal_loss, nps_loss, tv_loss, loss
                 # torch.cuda.empty_cache()  # note emptying cache adds too much overhead
-            
+
             # run validation to calc asr on val set if self.val_dir is not None
             if all([self.cfg.val_image_dir, self.cfg.val_epoch_freq]) and epoch % self.cfg.val_epoch_freq == 0:
                 with torch.no_grad():
@@ -277,8 +286,8 @@ class PatchTrainer:
         """
         # load patch from file
         patch_img = Image.open(patchfile).convert(self.cfg.patch_img_mode)
-        patch_img = transforms.Resize(self.cfg.patch_size)(patch_img)
-        adv_patch_cpu = transforms.ToTensor()(patch_img)
+        patch_img = T.Resize(self.cfg.patch_size)(patch_img)
+        adv_patch_cpu = T.ToTensor()(patch_img)
         adv_patch = adv_patch_cpu.to(self.dev)
 
         img_paths = glob.glob(osp.join(self.cfg.val_image_dir, "*"))
@@ -298,11 +307,11 @@ class PatchTrainer:
             img_name = osp.splitext(imgfile)[0].split('/')[-1]
             img = Image.open(imgfile).convert('RGB')
             padded_img = pad_to_square(img)
-            padded_img = transforms.Resize(self.cfg.model_in_sz)(padded_img)
+            padded_img = T.Resize(self.cfg.model_in_sz)(padded_img)
 
             #######################################
             # generate labels to use later for patched image
-            padded_img_tensor = transforms.ToTensor()(padded_img).unsqueeze(0).to(self.dev)
+            padded_img_tensor = T.ToTensor()(padded_img).unsqueeze(0).to(self.dev)
             pred = self.model(padded_img_tensor)
             boxes = non_max_suppression(pred, conf_thresh, nms_thresh)[0]
             # if doing targeted class performance check, ignore non target classes
@@ -317,7 +326,7 @@ class PatchTrainer:
                 x_center, y_center, width, height = box[:4]
                 x_center, y_center, width, height = x_center.item(), y_center.item(), width.item(), height.item()
                 labels.append([cls_id_box, x_center / m_w, y_center / m_h, width / m_w, height / m_h])
- 
+
             # save img if debug mode
             if self.cfg.debug_mode:
                 padded_img_drawn = PatchTester.draw_bbox_on_pil_image(
@@ -344,7 +353,7 @@ class PatchTrainer:
                     adv_patch, lab_fake_batch, self.cfg.model_in_sz,
                     use_mul_add_gau=self.cfg.use_mul_add_gau,
                     do_transforms=self.cfg.transform_patches,
-                    do_rotate=self.cfg.rotate_patches, 
+                    do_rotate=self.cfg.rotate_patches,
                     rand_loc=self.cfg.random_patch_loc)
                 p_tensor_batch = self.patch_applier(img_fake_batch, adv_batch_t)
 
@@ -357,7 +366,7 @@ class PatchTrainer:
 
             # save properly patched img if debug mode
             if self.cfg.debug_mode:
-                p_img_pil = transforms.ToPILImage('RGB')(p_tensor_batch.squeeze(0).cpu())
+                p_img_pil = T.ToPILImage('RGB')(p_tensor_batch.squeeze(0).cpu())
                 p_img_pil_drawn = PatchTester.draw_bbox_on_pil_image(
                     all_patch_preds[-1], p_img_pil, self.cfg.class_list)
                 p_img_pil_drawn.save(osp.join(self.cfg.log_dir, "val_patch_applied_imgs", img_name + ".jpg"))
@@ -368,7 +377,7 @@ class PatchTrainer:
         all_patch_preds = torch.cat(all_patch_preds)
         asr_s, asr_m, asr_l, asr_a = PatchTester.calc_asr(
             all_labels, all_patch_preds,
-            class_list=self.cfg.class_list, 
+            class_list=self.cfg.class_list,
             cls_id=cls_id)
 
         print(f"Validation metrics for images with patches:")
