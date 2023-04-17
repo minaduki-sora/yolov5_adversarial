@@ -7,6 +7,7 @@ requirements:
     depthai==2.20.2.0
 """
 import time
+from typing import Tuple
 from threading import Thread
 
 import cv2
@@ -24,7 +25,7 @@ CLASS_LABELS = ["car", "truck", "bus", "people"]
 
 
 class LoadOAKStream:
-    # YOLOv5 streamloader, i.e. `python detect.py --source oak
+    # YOLOv5 OAK-D camera streamloader
     def __init__(self, img_size=640, stride=32, auto=True, transforms=None, vid_stride=1, fps=25):
         torch.backends.cudnn.benchmark = True  # faster for fixed-size inference
         self.img_size = img_size
@@ -102,23 +103,36 @@ class LoadOAKStream:
         return 1
 
 
-def inference() -> None:
+def inference(
+    weights: str = "runs/s_coco_e300_4Class_PeopleVehicle/weights/best.pt",
+    device: str = 'cpu',
+    imgsz: Tuple[int, int] = (640, 640),
+    conf_thres: float = 0.5,
+    iou_thres: float = 0.45,
+    max_det: int = 1000,
+    classes: list = None,
+    agnostic_nms: bool = False,
+    half: bool = False,
+    num_skip_frames: int = 0,
+    cam_fps: int = 20,
+    debug: bool = False,
+) -> None:
     """Run Object Detection Application
-    """
-    weights = "runs/s_coco_e300_4Class_PeopleVehicle/weights/best.pt"
-    weights = "yolov5s.pt"
-    device = 'cpu'  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-    imgsz = (640, 640)  # inference size (height, width)
-    conf_thres = 0.25  # confidence threshold
-    iou_thres = 0.45  # NMS IOU threshold
-    max_det = 1000  # maximum detections per image
-    classes = None  # filter by class: --class 0, or --class 0 2 3
-    agnostic_nms = False  # class-agnostic NMS
-    half = False  # use half-precision
-    num_skip_frames = 1  # num of frames to skip to speed processing
-    cam_fps = 15  # only for oak-D camera
-    debug = False  # prints fps info
 
+    Args:
+        weights: str = path to yolov5 model
+        device: str =  cuda device, i.e. 0 or 0,1,2,3 or cpu
+        imgsz: Tuple[int, int] =  inference size (height, width)
+        conf_thres: float = confidence threshold
+        iou_thres: float = NMS IOU threshold
+        max_det: int =  maximum detections per image
+        classes: list = filter by class: --class 0, or --class 0 2 3
+        agnostic_nms: bool = class-agnostic NMS
+        half: bool = use half-precision
+        num_skip_frames: int = num of frames to skip to speed processing
+        cam_fps: int = only for oak-D camera
+        debug: bool =  prints fps info
+    """
     # create depth ai pipeline
     pipeline = depthai.Pipeline()
     pipeline.setXLinkChunkSize(0)
@@ -204,23 +218,36 @@ def inference() -> None:
         cv2.destroyAllWindows()
 
 
-def inference_threaded() -> None:
+def inference_threaded(
+    weights: str = "runs/s_coco_e300_4Class_PeopleVehicle/weights/best.pt",
+    device: str = 'cpu',
+    imgsz: Tuple[int, int] = (640, 640),
+    conf_thres: float = 0.5,
+    iou_thres: float = 0.45,
+    max_det: int = 1000,
+    classes: list = None,
+    agnostic_nms: bool = False,
+    half: bool = False,
+    num_skip_frames: int = 0,
+    cam_fps: int = 20,
+    debug: bool = False,
+) -> None:
     """Run Object Detection Application
-    """
-    # weights = "yolov5s.pt"
-    weights = "runs/s_coco_e300_4Class_PeopleVehicle/weights/best.pt"
-    device = 'cpu'  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-    imgsz = (640, 640)  # inference size (height, width)
-    conf_thres = 0.5  # confidence threshold
-    iou_thres = 0.45  # NMS IOU threshold
-    max_det = 1000  # maximum detections per image
-    classes = 0  # filter by class: --class 0, or --class 0 2 3
-    agnostic_nms = False  # class-agnostic NMS
-    half = False  # use half-precision
-    num_skip_frames = 0 # num of frames to skip to speed processing
-    cam_fps = 20  # only for oak-D camera
-    debug = False  # prints fps info
 
+    Args:
+        weights: str = path to yolov5 model
+        device: str =  cuda device, i.e. 0 or 0,1,2,3 or cpu
+        imgsz: Tuple[int, int] =  inference size (height, width)
+        conf_thres: float = confidence threshold
+        iou_thres: float = NMS IOU threshold
+        max_det: int =  maximum detections per image
+        classes: list = filter by class: --class 0, or --class 0 2 3
+        agnostic_nms: bool = class-agnostic NMS
+        half: bool = use half-precision
+        num_skip_frames: int = num of frames to skip to speed processing
+        cam_fps: int = only for oak-D camera
+        debug: bool =  prints fps info
+    """
     device = select_device(device)
     model = DetectMultiBackend(weights, device=device, dnn=False, data=None, fp16=half)
 
@@ -276,5 +303,17 @@ def inference_threaded() -> None:
 
 
 if __name__ == '__main__':
-    # inference()
-    inference_threaded()
+    # "weights": "runs/s_coco_e300_4Class_PeopleVehicle/weights/best.pt",
+    kwargs = {
+        "weights": "yolov5s.pt",
+        "device": 'cpu',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
+        "conf_thres": 0.5,  # confidence threshold
+        "max_det": 2,  # maximum detections per image
+        "classes": [0],  # filter by class: --class 0, or --class 0 2 3
+        "num_skip_frames": 0,  # num of frames to skip to speed processing
+        "cam_fps": 20,  # only for oak-D camera
+        "debug": False  # prints fps info
+    }
+
+    # inference(**kwargs)
+    inference_threaded(**kwargs)
