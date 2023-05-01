@@ -17,8 +17,18 @@ Refer to <https://github.com/SamSamhuns/ml_data_processing/tree/master/annotatio
 
 ### Docker Build
 
-    t=yolov5_adversarial:latest && docker build --build-arg UID=$(id -u) -f adv_patch_gen/Dockerfile -t $t .
+```shell
+t=yolov5_adversarial:latest && docker build --build-arg UID=$(id -u) -f adv_patch_gen/Dockerfile -t $t .
+```
 
 ### Docker Run
-    
-    t=yolov5_adversarial:latest && docker run -ti --rm --gpus device=0 -v "$(pwd)"/data:/home/user1/app/data -v "$(pwd)"/runs:/home/user1/app/runs $t bash
+
+Create shared volumes in host system before starting containers
+
+```shell
+mkdir -p "$(pwd)"/data
+```
+
+```shell
+t=yolov5_adversarial:latest && docker run -ti --rm --gpus device=0 -v "$(pwd)"/data:/home/user1/app/data -v "$(pwd)"/runs:/home/user1/app/runs $t bash
+``
