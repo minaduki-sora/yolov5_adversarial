@@ -82,14 +82,14 @@ class PatchTester:
 
     @staticmethod
     def calc_asr(
-        boxes,
-        boxes_pred,
-        class_list: List[str],
-        lo_area: float = 20**2,
-        hi_area: float = 67**2,
-        cls_id: Optional[int] = None,
-        class_agnostic: bool = False,
-        recompute_asr_all: bool = False) -> Tuple[float, float, float, float]:
+            boxes,
+            boxes_pred,
+            class_list: List[str],
+            lo_area: float = 20**2,
+            hi_area: float = 67**2,
+            cls_id: Optional[int] = None,
+            class_agnostic: bool = False,
+            recompute_asr_all: bool = False) -> Tuple[float, float, float, float]:
         """
         Calculate attack success rate (How many bounding boxes were hidden from the detector)
         for all predictions and for different bbox areas.
@@ -175,9 +175,9 @@ class PatchTester:
 
         annotator = Annotator(padded_img_np, line_width=1, example=str(label_2_class))
         for *xyxy, conf, cls in bbox:
-            c = int(cls)  # integer class
-            label = f'{label_2_class[c]} {conf:.2f}'
-            annotator.box_label(xyxy, label, color=colors(c, True))
+            cls_int = int(cls)  # integer class
+            label = f'{label_2_class[cls_int]} {conf:.2f}'
+            annotator.box_label(xyxy, label, color=colors(cls_int, True))
         return Image.fromarray(padded_img_np)
 
     def _create_coco_image_annot(self, file_path: Path, width: int, height: int, image_id: int) -> dict:
@@ -220,7 +220,7 @@ class PatchTester:
         Returns:
             dict of patch and noise coco_map and asr results
         """
-        t0 = time.time()
+        t_0 = time.time()
 
         patch_size = self.cfg.patch_size
         model_in_sz = self.cfg.model_in_sz
@@ -282,6 +282,9 @@ class PatchTester:
         all_patch_preds = []
         all_noise_preds = []
         det_boxes = dropped_boxes = 0
+
+        # apply rotation, location shift, brightness, contrast transforms for patch
+        apply_patch_transforms = True
 
         #### iterate through all images ####
         box_id = 0
@@ -380,10 +383,10 @@ class PatchTester:
                 # transform patch and add it to image
                 adv_batch_t = self.patch_transformer(
                     adv_patch, lab_fake_batch, model_in_sz,
-                    use_mul_add_gau=False,
-                    do_transforms=False,
-                    do_rotate=False, 
-                    rand_loc=False)
+                    use_mul_add_gau=apply_patch_transforms,
+                    do_transforms=apply_patch_transforms,
+                    do_rotate=apply_patch_transforms,
+                    rand_loc=apply_patch_transforms)
                 p_tensor_batch = self.patch_applier(img_fake_batch, adv_batch_t)
 
             properpatchedname = img_name + ".jpg"
@@ -441,10 +444,10 @@ class PatchTester:
                 random_patch = torch.rand(adv_patch_cpu.size()).to(self.dev)
                 adv_batch_t = self.patch_transformer(
                     random_patch, lab_fake_batch, model_in_sz,
-                    use_mul_add_gau=False,
-                    do_transforms=False,
-                    do_rotate=False, 
-                    rand_loc=False)
+                    use_mul_add_gau=apply_patch_transforms,
+                    do_transforms=apply_patch_transforms,
+                    do_rotate=apply_patch_transforms,
+                    rand_loc=apply_patch_transforms)
                 p_tensor_batch = self.patch_applier(img_fake_batch, adv_batch_t)
 
             randompatchedname = img_name + ".jpg"
@@ -508,8 +511,10 @@ class PatchTester:
             noise_confusion_matrix = ConfusionMatrix(len(self.cfg.class_list))
             noise_confusion_matrix.process_batch(all_noise_preds, all_labels)
 
-            patch_confusion_matrix.plot(save_dir=self.cfg.savedir, names=self.cfg.class_list, save_name="conf_matrix_patch.png")
-            noise_confusion_matrix.plot(save_dir=self.cfg.savedir, names=self.cfg.class_list, save_name="conf_matrix_noise.png")
+            patch_confusion_matrix.plot(save_dir=self.cfg.savedir, names=self.cfg.class_list,
+                                        save_name="conf_matrix_patch.png")
+            noise_confusion_matrix.plot(save_dir=self.cfg.savedir, names=self.cfg.class_list,
+                                        save_name="conf_matrix_noise.png")
 
         # add all required fields for a reference GT clean annotation
         clean_gt_results_json = {"annotations": clean_gt_results,
@@ -585,27 +590,28 @@ class PatchTester:
             ffmpeg_combine_three_vids(clean_vid, random_vid, patch_vid, osp.join(video_dir, "clean_random_patch.mp4"))
 
         if min_pixel_area:
-            dperc = 100*dropped_boxes/det_boxes
+            dperc = 100 * dropped_boxes / det_boxes
             drop_str = f" Det Boxes: {det_boxes} | Dropped Boxes: {dropped_boxes} | Dropped: {dperc:.2f}% @gt{min_pixel_area} px\n"
             print(drop_str)
             with open(clean_txt_path, 'a', encoding="utf-8") as fwriter:
                 fwriter.write(drop_str)
-        tf = time.time()
-        print(f" Time to complete evaluation = {tf - t0} seconds")
+        t_f = time.time()
+        print(f" Time to complete evaluation = {t_f - t_0} seconds")
         return {"patch": metrics_patch, "noise": metrics_noise}
 
 
 def main():
-    parser = get_argparser(desc="Test patches on a directory with images. Params from argparse take precedence over those from config")
+    parser = get_argparser(
+        desc="Test patches on a directory with images. Params from argparse take precedence over those from config")
     parser.add_argument('--dev', type=str,
                         dest="device", default=None, required=False,
-                        help='Device to use (i.e. cpu, cuda:0, cuda:1). If absent, use "device" from cfg json (default: %(default)s)')
+                        help='Device to use (i.e. cpu, cuda:0). If None, use "device" in cfg json (default: %(default)s)')
     parser.add_argument('--ts', '--target_size_frac', type=float, nargs='+',
                         dest="target_size_frac", default=[0.3], required=False,
-                        help='Patch target_size_frac of the bounding box area. Providing two values sets a range. (default: %(default)s)')
+                        help='Patch target_size_frac of the bbox area. Providing two values sets a range. (default: %(default)s)')
     parser.add_argument('-w', '--weights', type=str,
                         dest="weights", default=None, required=False,
-                        help='Path to yolov5 model wt file. If absent, use "weights_file" model path from cfg json (default: %(default)s)')
+                        help='Path to yolov5 model wt. If None, use "weights_file" path in cfg json (default: %(default)s)')
     parser.add_argument('-p', '--patchfile', type=str,
                         dest="patchfile", default=None, required=True,
                         help='Path to patch image file for testing (default: %(default)s)')
@@ -632,13 +638,13 @@ def main():
                         help='Save the confusion matrix plots, PR, P & R curves')
     parser.add_argument('--class-agnostic',
                         dest="class_agnostic", action='store_true',
-                        help='All classes are teated the same. Use when only evaluating for obj det & not classification')
+                        help='All classes are teated the same. Use when only evaluating for obj det & not clsf')
     parser.add_argument('--target-class', type=int,
                         dest="target_class", default=None, required=False,
                         help='Target specific class with id for misclassification test (default: %(default)s)')
     parser.add_argument('--min-pixel-area', type=int,
                         dest="min_pixel_area", default=None, required=False,
-                        help='all bboxes having area < this are filtered out during testing. if None, use all boxes (default: %(default)s)')
+                        help='all bboxes having area < this are filtered in test. if None, use all bboxes (default: %(default)s)')
 
     args = parser.parse_args()
     cfg = load_config_object(args.config)
@@ -652,7 +658,7 @@ def main():
     if not isinstance(args.target_size_frac, float) and len(args.target_size_frac) != 2:
         raise ValueError("target_size_frac can only have one or two values")
     if args.savevideo and not args.saveimg:
-        raise ValueError(f"To save videos, images must also be saved pass both --save-img & --save-vid flags")
+        raise ValueError("To save videos, images must also be saved pass both --save-img & --save-vid flags")
     savename = f'{time.strftime("%Y%m%d-%H%M%S")}_' + cfg.patch_name
     if args.class_agnostic and args.target_class is not None:
         print(f"""{BColors.WARNING}WARNING:{BColors.ENDC} target_class and class_agnostic are both set.
@@ -666,8 +672,8 @@ def main():
 
     print(f"{BColors.OKBLUE} Test Arguments: {args} {BColors.ENDC}")
     tester = PatchTester(cfg)
-    tester.test(conf_thresh=args.conf_thresh, save_txt=args.savetxt, save_image=args.saveimg, 
-                class_agnostic=args.class_agnostic, cls_id=args.target_class, min_pixel_area=args.min_pixel_area, 
+    tester.test(conf_thresh=args.conf_thresh, save_txt=args.savetxt, save_image=args.saveimg,
+                class_agnostic=args.class_agnostic, cls_id=args.target_class, min_pixel_area=args.min_pixel_area,
                 save_plots=args.saveplots, save_video=args.savevideo)
 
 
