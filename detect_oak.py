@@ -4,7 +4,6 @@ https://docs.luxonis.com/en/latest/pages/tutorials/first_steps/#first-steps-with
 
 requirements:
     depthai-sdk==1.9.4
-    depthai==2.20.2.0
 """
 import time
 from typing import Tuple
@@ -14,6 +13,7 @@ import cv2
 import torch
 import numpy as np
 import depthai
+import onnxruntime
 
 from models.common import DetectMultiBackend
 from utils.augmentations import letterbox
@@ -85,7 +85,7 @@ class LoadOAKStream:
 
     def __next__(self):
         self.count += 1
-        if not self.thread.is_alive() or cv2.waitKey(1) == ord('q'):  # q to quit
+        if not self.thread.is_alive() or cv2.waitKey(2) == ord('q'):  # q to quit
             cv2.destroyAllWindows()
             raise StopIteration
 
@@ -116,6 +116,7 @@ def inference(
     num_skip_frames: int = 0,
     cam_fps: int = 20,
     debug: bool = False,
+    **kwrags
 ) -> None:
     """Run Object Detection Application
 
@@ -231,6 +232,7 @@ def inference_threaded(
     num_skip_frames: int = 0,
     cam_fps: int = 20,
     debug: bool = False,
+    **kwrags
 ) -> None:
     """Run Object Detection Application
 
@@ -302,10 +304,132 @@ def inference_threaded(
     cv2.destroyAllWindows()
 
 
+def inference_threaded_with_defense(
+    weights: str = "runs/s_coco_e300_4Class_PeopleVehicle/weights/best.pt",
+    def_weights: str = "runs/defendern250.onnx",
+    device: str = 'cpu',
+    disp_res: Tuple[int, int] = (960, 960),
+    conf_thres: float = 0.5,
+    iou_thres: float = 0.45,
+    max_det: int = 1000,
+    classes: list = None,
+    agnostic_nms: bool = False,
+    half: bool = False,
+    num_skip_frames: int = 0,
+    cam_fps: int = 20,
+    debug: bool = False,
+) -> None:
+    """Run Object Detection Application
+
+    Args:
+        weights: str = path to yolov5 model
+        def_weights: str = path to onnx autoencoder defense model
+        device: str =  cuda device, i.e. 0 or 0,1,2,3 or cpu
+        imgsz: Tuple[int, int] =  inference size (height, width)
+        conf_thres: float = confidence threshold
+        iou_thres: float = NMS IOU threshold
+        max_det: int =  maximum detections per image
+        classes: list = filter by class: --class 0, or --class 0 2 3
+        agnostic_nms: bool = class-agnostic NMS
+        half: bool = use half-precision
+        num_skip_frames: int = num of frames to skip to speed processing
+        cam_fps: int = only for oak-D camera
+        debug: bool =  prints fps info
+    """
+    device = select_device(device)
+    model = DetectMultiBackend(weights, device=device, dnn=False, data=None, fp16=half)
+
+    names = model.names
+    stream = LoadOAKStream(img_size=640, stride=32, auto=True, fps=cam_fps)
+    dt = (Profile(), Profile(), Profile())
+
+    onnx_session = onnxruntime.InferenceSession(def_weights, None)
+    onnx_input_name = onnx_session.get_inputs()[0].name
+
+    counter = 0
+    for im, im0 in stream:
+        start = time.time()
+
+        if counter % (num_skip_frames + 1) == 0:
+            im_def = np.transpose(im.copy(), (0, 2, 3, 1)).astype(np.float32) / 255.  # BCHW to BHWC
+            with dt[0]:
+                im = torch.from_numpy(im).to(model.device)
+                im = im.half() if model.fp16 else im.float()  # uint8 to fp16/32
+                im /= 255  # 0 - 255 to 0.0 - 1.0
+                if len(im.shape) == 3:
+                    im = im[None]  # expand for batch dim
+
+            # Inference defense
+            im_def = 2. * im_def - 1.  # [0, 1] to [-1, 1]
+            updates = onnx_session.run([], {onnx_input_name: im_def})[0] * 2.  # get def updates
+            im_def = np.clip(updates + im_def, -1., 1.)
+            im_def = (im_def + 1.) / 2.   # [-1, 1] to [0, 1]
+
+            im_def = np.transpose(im_def, (0, 3, 1, 2))  # BHWC to BCHW
+            im_def = torch.from_numpy(im_def).to(model.device)
+
+            # Inference
+            with dt[1]:
+                pred = model(im)
+                pred_def = model(im_def)
+
+            # NMS
+            with dt[2]:
+                pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
+                pred_def = non_max_suppression(pred_def, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
+
+            # Process predictions
+            for i, det in enumerate(pred):  # per image
+                annotator = Annotator(im0, line_width=1, example=str(names))
+                if len(det):
+                    # Rescale boxes from img_size to im0 size
+                    det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()
+
+                    for *xyxy, conf, cls in reversed(det):
+                        # Add bbox to image
+                        c = int(cls)  # integer class
+                        label = f'{names[c]} {conf:.2f}'
+                        annotator.box_label(xyxy, label, color=colors(c, True))
+
+                # Stream results
+                im0 = annotator.result()
+
+            im02 = (im_def.cpu().numpy().transpose((0, 2, 3, 1)) * 255.).astype(np.uint8)[0]  # BCHW to BHWC
+            for i, det in enumerate(pred_def):  # per image
+                annotator = Annotator(im02, line_width=1, example=str(names))
+                if len(det):
+                    # Rescale boxes from img_size to im02 size
+                    det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im02.shape).round()
+
+                    for *xyxy, conf, cls in reversed(det):
+                        # Add bbox to image
+                        c = int(cls)  # integer class
+                        label = f'{names[c]} {conf:.2f}'
+                        annotator.box_label(xyxy, label, color=colors(c, True))
+
+                # Stream results
+                im02 = annotator.result()
+            im02 = im02[:, :, ::-1]
+
+            cv2.imshow("OAK attack", cv2.resize(im0, disp_res))
+            cv2.imshow("OAK defense", cv2.resize(im02, disp_res))
+
+            end = time.time()
+            inf_time = end - start
+            fps = 1. / inf_time
+            if debug:
+                print(f'Inference FPS: {fps:.2f} FPS')
+
+            counter += 1
+
+    cv2.destroyAllWindows()
+
+
 if __name__ == '__main__':
-    # "weights": "runs/s_coco_e300_4Class_PeopleVehicle/weights/best.pt",
+    # "weights": "yolov5s.pt", # to use the base coco 80 class model
     kwargs = {
-        "weights": "yolov5s.pt",
+        "weights": "runs/s_coco_e300_4Class_PeopleVehicle/weights/best.pt",
+        "def_weights": "runs/defendern250.onnx",
         "device": 'cpu',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
         "conf_thres": 0.5,  # confidence threshold
         "max_det": 2,  # maximum detections per image
@@ -316,4 +440,5 @@ if __name__ == '__main__':
     }
 
     # inference(**kwargs)
-    inference_threaded(**kwargs)
+    # inference_threaded(**kwargs)
+    inference_threaded_with_defense(**kwargs)
