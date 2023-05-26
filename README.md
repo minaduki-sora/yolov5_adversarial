@@ -1,3 +1,46 @@
+# YOLOv5 physical adversarial patch generation
+
+<img src="adv_patch_gen/media/patch_on_cars.png" width="563" />
+
+[Paper Link: Will be available soon]()
+
+VisDrone Dataset Patch            |  Custom Dataset Patch
+:-------------------------:|:-------------------------:
+<img src="adv_patch_gen/media/visdrone_p.png" width="256" />  |  <img src="adv_patch_gen/media/custom_p.png" width="256" />
+
+<video src='adv_patch_gen/media/phy_atk.mp4' width=180></video>
+
+<video src='adv_patch_gen/media/phy_def.mp4' width=180></video>
+
+Note: Install all required dependencies as mentioned in the main YOLOv5 repository and install additional yolov5 adversarial dependency as follows:
+
+```shell
+pip install -r requirements.txt  # yolov5 reqs
+pip install -r adv_patch_gen/requirements.txt
+```
+
+Detailed instructions for setup and docker use at [adv_patch_gen/README.md](adv_patch_gen/README.md)
+
+## Train an adversarial patch against the detector
+
+```shell
+python train_patch.py --cfg adv_patch_gen/configs/base.json
+```
+Instructions in creating the config json file present at [adv_patch_gen/configs/README.md](adv_patch_gen/configs/README.md).
+
+## Test the performance of the adversarial patch
+
+```shell
+python test_patch.py --cfg CONFIG_JSON_FILE -w YOLOV5_TARGET_MODEL_WEIGHTS_PATH -p PATCH_IMG_FILE_PATH --id IMG_DIR_PATH_FOR_TESTING --sd SAVE_DIR_PATH
+python test_patch.py -h  # to get a list of all testing options
+```
+
+## Attack Sccess Rate of patches tested against the VisDrone-2019 dataset
+
+ASR against coco-pretrained & scratch-trained  |  ASR against increasing detection confidence threshold
+:-------------------------:|:-------------------------:
+<img src="adv_patch_gen/media/asr_s_coco_2_s_coco_s_scratch.png" />  |  <img src="adv_patch_gen/media/plot_all_avg_0_76.png" />
+
 <div align="center">
   <p>
     <a align="center" href="https://ultralytics.com/yolov5" target="_blank">

@@ -260,3 +260,4 @@ fabric.properties
 !adv_patch_gen/configs/base.json
 # ignore test images for adv notebooks
 !adv_patch_gen/test_notebooks/images/*
+!adv_patch_gen/media/*
