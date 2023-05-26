@@ -258,3 +258,5 @@ fabric.properties
 
 # exceptions for adversarial patch config base file
 !adv_patch_gen/configs/base.json
+# ignore test images for adv notebooks
+!adv_patch_gen/test_notebooks/images/*
