@@ -1,16 +1,22 @@
 # YOLOv5 physical adversarial patch generation
 
-<img src="adv_patch_gen/media/patch_on_cars.png" width="563" />
-
 [Paper Link: Will be available soon]()
 
-VisDrone Dataset Patch            |  Custom Dataset Patch
+<img src="adv_patch_gen/media/patch_on_cars.png" width="563" />
+
+https://github.com/SamSamhuns/yolov5_adversarial/assets/13418507/ffb90da3-fb13-472e-89a5-db07d5a571b9
+
+Physical Adversarial Patch Attack
+
+https://github.com/SamSamhuns/yolov5_adversarial/assets/13418507/05c47fd2-44f0-42be-b6d9-ef485ce5e08d
+
+Physical Adversarial Patch Defense
+
+https://github.com/SamSamhuns/yolov5_adversarial/assets/13418507/b389449f-98a4-4167-9208-771cb98ce3ce
+
+VisDrone Dataset Patch     |  Custom Dataset Patch
 :-------------------------:|:-------------------------:
 <img src="adv_patch_gen/media/visdrone_p.png" width="256" />  |  <img src="adv_patch_gen/media/custom_p.png" width="256" />
-
-<video src='adv_patch_gen/media/phy_atk.mp4' width=180></video>
-
-<video src='adv_patch_gen/media/phy_def.mp4' width=180></video>
 
 Note: Install all required dependencies as mentioned in the main YOLOv5 repository and install additional yolov5 adversarial dependency as follows:
 
