@@ -1,6 +1,6 @@
 # YOLOv5 physical adversarial patch generation
 
-[Paper Link: Will be available soon]()
+[Paper: Towards a Robust Adversarial Patch Attack Against Unmanned Aerial Vehicles Object Detection](https://www.researchgate.net/publication/373548943_Towards_a_Robust_Adversarial_Patch_Attack_Against_Unmanned_Aerial_Vehicles_Object_Detection)
 
 <img src="adv_patch_gen/media/patch_on_cars.png" width="563" />
 
