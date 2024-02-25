@@ -173,8 +173,7 @@ def create_dataloader(
     prefix="",
     shuffle=False,
     seed=0,
-,
-                      patch_dir=''):
+    patch_dir=''):
     if rect and shuffle:
         LOGGER.warning("WARNING ⚠️ --rect is incompatible with DataLoader shuffle, setting shuffle=False")
         shuffle = False
@@ -553,8 +552,7 @@ class LoadImagesAndLabels(Dataset):
         prefix="",
         rank=-1,
         seed=0,
-    ,
-                 patch_dir=''):
+        patch_dir=''):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
