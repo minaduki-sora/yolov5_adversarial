@@ -5,7 +5,9 @@ from typing import List, Tuple, Set
 import numpy as np
 
 
-def get_annot_img_paths(annot_dir: str, image_dir: str, annot_ext: Set[str], img_ext: Set[str]) -> Tuple[List[str], List[str]]:
+def get_annot_img_paths(
+    annot_dir: str, image_dir: str, annot_ext: Set[str], img_ext: Set[str]
+) -> Tuple[List[str], List[str]]:
     annots_path = os.path.join(annot_dir, "*")
     images_path = os.path.join(image_dir, "*")
     annot_paths = [p for p in sorted(glob.glob(annots_path)) if os.path.splitext(p)[-1] in annot_ext]
@@ -19,7 +21,7 @@ def load_visdrone_annots_as_np(annot_file: str) -> np.ndarray:
     annot_list = []
     with open(annot_file, "r") as f:
         for values in f:
-            annots = list(map(int, values.strip().strip(',').split(',')))
+            annots = list(map(int, values.strip().strip(",").split(",")))
             x1, y1 = annots[0], annots[1]
             x2, y2 = x1 + annots[2], y1 + annots[3]
             score, class_id, occu = annots[4], annots[5], annots[7]

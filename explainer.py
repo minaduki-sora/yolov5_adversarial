@@ -14,8 +14,20 @@ import cv2
 import numpy as np
 import torch
 from PIL import Image
-from pytorch_grad_cam import (AblationCAM, EigenCAM, FullGrad, GradCAM, GradCAMPlusPlus, HiResCAM, ScoreCAM, XGradCAM,
-                              EigenGradCAM, GradCAMElementWise, LayerCAM, RandomCAM)
+from pytorch_grad_cam import (
+    AblationCAM,
+    EigenCAM,
+    FullGrad,
+    GradCAM,
+    GradCAMPlusPlus,
+    HiResCAM,
+    ScoreCAM,
+    XGradCAM,
+    EigenGradCAM,
+    GradCAMElementWise,
+    LayerCAM,
+    RandomCAM,
+)
 from pytorch_grad_cam.utils.image import scale_cam_image, show_cam_on_image
 
 FILE = Path(__file__).resolve()
@@ -46,15 +58,15 @@ def yolo_reshape_transform(x):
     return x
 
 
-class YOLOBoxScoreTarget():
-    """ For every original detected bounding box specified in "bounding boxes",
-        assign a score on how the current bounding boxes match it,
-            1. In IOU
-            2. In the classification score.
-        If there is not a large enough overlap, or the category changed,
-        assign a score of 0.
+class YOLOBoxScoreTarget:
+    """For every original detected bounding box specified in "bounding boxes",
+    assign a score on how the current bounding boxes match it,
+        1. In IOU
+        2. In the classification score.
+    If there is not a large enough overlap, or the category changed,
+    assign a score of 0.
 
-        The total score is the sum of all the box scores.
+    The total score is the sum of all the box scores.
     """
 
     def __init__(self, classes, objectness_threshold):
@@ -91,8 +103,9 @@ class YOLOBoxScoreTarget():
         return score.sum()
 
 
-def extract_CAM(method, model: torch.nn.Module, image, layer: int, classes, objectness_score: float, use_cuda: bool,
-                **kwargs):
+def extract_CAM(
+    method, model: torch.nn.Module, image, layer: int, classes, objectness_score: float, use_cuda: bool, **kwargs
+):
     target_layers = [model.model.model.model[layer]]
     targets = [YOLOBoxScoreTarget(classes=classes, objectness_threshold=objectness_score)]
     cam = method(model, target_layers, use_cuda=use_cuda, reshape_transform=yolo_reshape_transform, **kwargs)
@@ -109,17 +122,17 @@ def explain(method: str, model, image, layer: int, classes, objectness_thres: fl
     cam_image = None
     method_obj = None
     extra_arguments = {}
-    if method.lower() == 'GradCAM'.lower():
+    if method.lower() == "GradCAM".lower():
         method_obj = GradCAM
-    elif method.lower() == 'EigenCAM'.lower():
+    elif method.lower() == "EigenCAM".lower():
         method_obj = EigenCAM
-    elif method.lower() == 'EigenGradCAM'.lower():
+    elif method.lower() == "EigenGradCAM".lower():
         method_obj = EigenGradCAM
-    elif method.lower() == 'GradCAMPlusPlus'.lower():
+    elif method.lower() == "GradCAMPlusPlus".lower():
         method_obj = GradCAMPlusPlus
-    elif method.lower() == 'XGradCAM'.lower():
+    elif method.lower() == "XGradCAM".lower():
         method_obj = XGradCAM
-    elif method.lower() == 'HiResCAM'.lower():
+    elif method.lower() == "HiResCAM".lower():
         method_obj = HiResCAM
     # elif method.lower()=='FullGrad'.lower():
     #     method_obj= FullGrad
@@ -131,22 +144,21 @@ def explain(method: str, model, image, layer: int, classes, objectness_thres: fl
     #         'batch_size': 32,
     #         'ratio_channels_to_ablate': 1.0 }
     #     method_obj= AblationCAM
-    elif method.lower() == 'GradCAMElementWise'.lower():
+    elif method.lower() == "GradCAMElementWise".lower():
         method_obj = GradCAMElementWise
-    elif method.lower() == 'LayerCAM'.lower():
+    elif method.lower() == "LayerCAM".lower():
         method_obj = LayerCAM
-    elif method.lower() == 'RandomCAM'.lower():
+    elif method.lower() == "RandomCAM".lower():
         # this is not an actual method. It is random
         method_obj = RandomCAM
     else:
-        raise NotImplementedError('The method that you requested has not yet been implemented')
+        raise NotImplementedError("The method that you requested has not yet been implemented")
 
     cam_image = extract_CAM(method_obj, model, image, layer, classes, objectness_thres, use_cuda, **extra_arguments)
     return cam_image
 
 
 class YoloOutputWrapper(torch.nn.Module):
-
     def __init__(self, model):
         super().__init__()
         self.model = model
@@ -161,24 +173,24 @@ class YoloOutputWrapper(torch.nn.Module):
 
 
 def run(
-        weights=ROOT / 'yolov5s.pt',  # model path or triton URL
-        source=ROOT / 'data/images',  # file/dir/URL/glob/screen/0(webcam)
-        data=ROOT / 'data/coco128.yaml',  # dataset.yaml path
-        method='EigenCAM',  # the method for interpreting the results
-        layer=-2,
-        class_names=None,  # list of class names to use for CAM methods
-        objectness_thres=0.1,  # threshold for objectness
-        imgsz=(640, 640),  # inference size (height, width)
-        device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-        nosave=False,  # do not save images/videos
-        dnn=False,  # use OpenCV DNN for ONNX inference
-        half=False,  # use FP16 half-precision inference
-        vid_stride=1,  # video frame-rate stride
+    weights=ROOT / "yolov5s.pt",  # model path or triton URL
+    source=ROOT / "data/images",  # file/dir/URL/glob/screen/0(webcam)
+    data=ROOT / "data/coco128.yaml",  # dataset.yaml path
+    method="EigenCAM",  # the method for interpreting the results
+    layer=-2,
+    class_names=None,  # list of class names to use for CAM methods
+    objectness_thres=0.1,  # threshold for objectness
+    imgsz=(640, 640),  # inference size (height, width)
+    device="",  # cuda device, i.e. 0 or 0,1,2,3 or cpu
+    nosave=False,  # do not save images/videos
+    dnn=False,  # use OpenCV DNN for ONNX inference
+    half=False,  # use FP16 half-precision inference
+    vid_stride=1,  # video frame-rate stride
 ):
     source = str(source)
-    save_img = not nosave and not source.endswith('.txt')  # save inference images
+    save_img = not nosave and not source.endswith(".txt")  # save inference images
     is_file = Path(source).suffix[1:] in (IMG_FORMATS + VID_FORMATS)
-    is_url = source.lower().startswith(('rtsp://', 'rtmp://', 'http://', 'https://'))
+    is_url = source.lower().startswith(("rtsp://", "rtmp://", "http://", "https://"))
     if is_url and is_file:
         source = check_file(source)  # download
 
@@ -198,13 +210,21 @@ def run(
     class_names = ["car"]
     class_idx = [model_classes[item] for item in class_names]
 
-    grad_dir  = "grad_imgs"
+    grad_dir = "grad_imgs"
     os.makedirs(grad_dir, exist_ok=True)
     fname = Path(source).stem
 
     methods = [
-        "EigenCAM", "GradCAM", "GradCAMPlusPlus", "HiResCAM", "XGradCAM", 
-        "EigenGradCAM", "GradCAMElementWise", "LayerCAM", "RandomCAM"]
+        "EigenCAM",
+        "GradCAM",
+        "GradCAMPlusPlus",
+        "HiResCAM",
+        "XGradCAM",
+        "EigenGradCAM",
+        "GradCAMElementWise",
+        "LayerCAM",
+        "RandomCAM",
+    ]
     if method != "all":
         methods = [method]
 
@@ -227,32 +247,39 @@ def run(
 
         for cam_method in methods:
             print(f"Running method: {cam_method}")
-            cam_image = explain(method=cam_method,
-                                model=model,
-                                image=im,
-                                layer=layer,
-                                classes=class_idx,
-                                objectness_thres=objectness_thres,
-                                use_cuda=use_cuda)
+            cam_image = explain(
+                method=cam_method,
+                model=model,
+                image=im,
+                layer=layer,
+                classes=class_idx,
+                objectness_thres=objectness_thres,
+                use_cuda=use_cuda,
+            )
             if len(pred[0]):
                 annotator = Annotator(cam_image, line_width=2, example=str(names))
                 # Add bboxes to image
                 for *xyxy, conf, cls in reversed(pred[0]):
                     c = int(cls)  # integer class
-                    label = f'{names[c]} {conf:.2f}'
+                    label = f"{names[c]} {conf:.2f}"
                     annotator.box_label(xyxy, label, color=colors(c, True))
-     
+
             # save the image in a file
             cv2.imwrite(f"{grad_dir}/grad_{fname}_{cam_method}.jpg", cam_image)
 
 
 def parseopt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model path or triton URL')
-    parser.add_argument('--source', type=str, default=ROOT / 'data/images', help='file/dir/URL/glob/screen/0(webcam)')
-    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--method', type=str, default='EigenCAM', help="the method to use for interpreting the feature maps (use 'all' to use all methods)")
+    parser.add_argument("--weights", nargs="+", type=str, default=ROOT / "yolov5s.pt", help="model path or triton URL")
+    parser.add_argument("--source", type=str, default=ROOT / "data/images", help="file/dir/URL/glob/screen/0(webcam)")
+    parser.add_argument("--imgsz", "--img", "--img-size", nargs="+", type=int, default=[640], help="inference size h,w")
+    parser.add_argument("--device", default="", help="cuda device, i.e. 0 or 0,1,2,3 or cpu")
+    parser.add_argument(
+        "--method",
+        type=str,
+        default="EigenCAM",
+        help="the method to use for interpreting the feature maps (use 'all' to use all methods)",
+    )
 
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
@@ -264,6 +291,6 @@ def main(opt):
     run(**vars(opt))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     opt = parseopt()
     main(opt)

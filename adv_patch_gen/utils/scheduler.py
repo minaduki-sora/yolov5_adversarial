@@ -37,26 +37,25 @@ class GradualWarmupScheduler(_LRScheduler):
 
         get_last_lr = getattr(self.after_scheduler, "get_last_lr", None)
         if not callable(get_last_lr):
+
             def get_last_lr():
-                return [group['lr'] for group in self.optimizer.param_groups]
+                return [group["lr"] for group in self.optimizer.param_groups]
+
         self.after_scheduler.get_last_lr = get_last_lr
 
         self.finished = False  # set to True when warmup done
-        super(GradualWarmupScheduler, self).__init__(
-            optimizer, last_epoch, verbose)
+        super(GradualWarmupScheduler, self).__init__(optimizer, last_epoch, verbose)
 
     def get_lr(self):
         if self.last_epoch > self.warmup_epochs:
             if self.after_scheduler:
                 if not self.finished:
-                    self.after_scheduler.base_lrs = [
-                        base_lr for base_lr in self.base_lrs]
+                    self.after_scheduler.base_lrs = [base_lr for base_lr in self.base_lrs]
                     self.finished = True
                 return self.after_scheduler.get_last_lr()
             return [base_lr for base_lr in self.base_lrs]
 
-        return [max(base_lr * (self.last_epoch / self.warmup_epochs), self.eps_lr)
-                for base_lr in self.base_lrs]
+        return [max(base_lr * (self.last_epoch / self.warmup_epochs), self.eps_lr) for base_lr in self.base_lrs]
 
     def step(self, metrics=None, epoch=None):
         # metrics is discarded unless ReduceLROnPlateau is used as after_scheduler
@@ -65,19 +64,25 @@ class GradualWarmupScheduler(_LRScheduler):
         # https://github.com/pytorch/pytorch/issues/20124
         if self._step_count == 1:
             if not hasattr(self.optimizer.step, "_with_counter"):
-                warnings.warn("Seems like `optimizer.step()` has been overridden after learning rate scheduler "
-                              "initialization. Please, make sure to call `optimizer.step()` before "
-                              "`lr_scheduler.step()`. See more details at "
-                              "https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate", UserWarning)
+                warnings.warn(
+                    "Seems like `optimizer.step()` has been overridden after learning rate scheduler "
+                    "initialization. Please, make sure to call `optimizer.step()` before "
+                    "`lr_scheduler.step()`. See more details at "
+                    "https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate",
+                    UserWarning,
+                )
 
             # Just check if there were two first lr_scheduler.step() calls before optimizer.step()
             elif self.optimizer._step_count < 1:
-                warnings.warn("Detected call of `lr_scheduler.step()` before `optimizer.step()`. "
-                              "In PyTorch 1.1.0 and later, you should call them in the opposite order: "
-                              "`optimizer.step()` before `lr_scheduler.step()`.  Failure to do this "
-                              "will result in PyTorch skipping the first value of the learning rate schedule. "
-                              "See more details at "
-                              "https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate", UserWarning)
+                warnings.warn(
+                    "Detected call of `lr_scheduler.step()` before `optimizer.step()`. "
+                    "In PyTorch 1.1.0 and later, you should call them in the opposite order: "
+                    "`optimizer.step()` before `lr_scheduler.step()`.  Failure to do this "
+                    "will result in PyTorch skipping the first value of the learning rate schedule. "
+                    "See more details at "
+                    "https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate",
+                    UserWarning,
+                )
         self._step_count += 1
         if self.finished and self.after_scheduler:
             # if ReduceLROnPlateau is used, use the metrics parameter
@@ -90,4 +95,3 @@ class GradualWarmupScheduler(_LRScheduler):
             self._last_lr = self.after_scheduler.get_last_lr()
         else:
             return super(GradualWarmupScheduler, self).step()
-

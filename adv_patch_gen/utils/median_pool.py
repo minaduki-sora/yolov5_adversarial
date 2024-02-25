@@ -4,7 +4,7 @@ from torch.nn.modules.utils import _pair, _quadruple
 
 
 class MedianPool2d(nn.Module):
-    """ Median pool (usable as median filter when stride=1) module.
+    """Median pool (usable as median filter when stride=1) module.
 
     Args:
          kernel_size: size of pooling kernel, int or 2-tuple
@@ -43,8 +43,7 @@ class MedianPool2d(nn.Module):
     def forward(self, x):
         # using existing pytorch functions and tensor ops so that we get autograd,
         # would likely be more efficient to implement from scratch at C/Cuda level
-        x = F.pad(x, self._padding(x), mode='reflect')
-        x = x.unfold(2, self.k[0], self.stride[0]).unfold(
-            3, self.k[1], self.stride[1])
+        x = F.pad(x, self._padding(x), mode="reflect")
+        x = x.unfold(2, self.k[0], self.stride[0]).unfold(3, self.k[1], self.stride[1])
         x = x.contiguous().view(x.size()[:4] + (-1,)).median(dim=-1)[0]
         return x

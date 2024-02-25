@@ -307,13 +307,15 @@ def run(
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         if weights:
             cname = names[target_class] if target_class is not None else "all"
-            mname = '_'.join(weights[0].split('/')[2].split('_')[:2])
+            mname = "_".join(weights[0].split("/")[2].split("_")[:2])
             rap50 = [round(val, 2) for val in ap50]
-            with open(os.path.join(save_dir, "metrics.txt"), 'w') as fw:
+            with open(os.path.join(save_dir, "metrics.txt"), "w") as fw:
                 if target_class is not None:
                     fw.write(f"map50 {name} {mname} {cname}: {round(map50, 2)}\n")
                 else:
-                    fw.write(f"map50 {name} {mname} {cname}: {rap50[0]} {rap50[1]} {rap50[2]} {rap50[3]} {round(map50, 2)}\n")
+                    fw.write(
+                        f"map50 {name} {mname} {cname}: {rap50[0]} {rap50[1]} {rap50[2]} {rap50[3]} {round(map50, 2)}\n"
+                    )
     nt = np.bincount(stats[3].astype(int), minlength=nc)  # number of targets per class
 
     # Print results
@@ -375,7 +377,7 @@ def run(
                 eval.summarize()
             eval_stats = std_out.getvalue()
             map_save_path = save_dir / "map_stats.txt"
-            with open(map_save_path, 'w', encoding="utf-8") as fwriter:
+            with open(map_save_path, "w", encoding="utf-8") as fwriter:
                 fwriter.write(eval_stats)
         except Exception as e:
             LOGGER.info(f"pycocotools unable to run: {e}")
@@ -416,9 +418,17 @@ def parse_opt():
     parser.add_argument("--exist-ok", action="store_true", help="existing project/name ok, do not increment")
     parser.add_argument("--half", action="store_true", help="use FP16 half-precision inference")
     parser.add_argument("--dnn", action="store_true", help="use OpenCV DNN for ONNX inference")
-    parser.add_argument('--target-class', default=None, type=int, help='target class int id to target. Pass None to eval for all classes')
-    parser.add_argument('--anno-json', default="../datasets/coco/annotations/instances_val2017.json",
-                        help='path to ref ground truth json annot file')
+    parser.add_argument(
+        "--target-class",
+        default=None,
+        type=int,
+        help="target class int id to target. Pass None to eval for all classes",
+    )
+    parser.add_argument(
+        "--anno-json",
+        default="../datasets/coco/annotations/instances_val2017.json",
+        help="path to ref ground truth json annot file",
+    )
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith("coco.yaml")
