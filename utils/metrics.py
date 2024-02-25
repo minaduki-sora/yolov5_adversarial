@@ -156,11 +156,15 @@ class ConfusionMatrix:
 
         x = torch.where(iou > self.iou_thres)  #  x is a tuple of matching (x coord, y coord)
         if x[0].shape[0]:
-            matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # shape [num_matches, [x coord, y coord, iou]]
+            matches = (
+                torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()
+            )  # shape [num_matches, [x coord, y coord, iou]]
             if x[0].shape[0] > 1:
-                matches = matches[matches[:, 2].argsort()[::-1]]                   # rev sort by iou thres, so only max iou matches are kept for dups
+                matches = matches[
+                    matches[:, 2].argsort()[::-1]
+                ]  # rev sort by iou thres, so only max iou matches are kept for dups
                 matches = matches[np.unique(matches[:, 1], return_index=True)[1]]  # remove dup matches with y-coord
-                matches = matches[matches[:, 2].argsort()[::-1]]                   # rev sort by iou thres
+                matches = matches[matches[:, 2].argsort()[::-1]]  # rev sort by iou thres
                 matches = matches[np.unique(matches[:, 0], return_index=True)[1]]  # remove dup matches with x-coord
         else:
             matches = np.zeros((0, 3))
@@ -189,7 +193,7 @@ class ConfusionMatrix:
         return tp[:-1], fp[:-1]  # remove background class
 
     @TryExcept("WARNING ⚠️ ConfusionMatrix plot failure")
-    def plot(self, normalize=True, save_dir="", names=(), save_name='confusion_matrix.png'):
+    def plot(self, normalize=True, save_dir="", names=(), save_name="confusion_matrix.png"):
         """Plots confusion matrix using seaborn, optional normalization; can save plot to specified directory."""
         import seaborn as sn
 
@@ -335,7 +339,7 @@ def wh_iou(wh1, wh2, eps=1e-7):
 
 
 @threaded
-def plot_pr_curve(px, py, ap, save_dir=Path('pr_curve.png'), names=()):
+def plot_pr_curve(px, py, ap, save_dir=Path("pr_curve.png"), names=()):
     """Plots precision-recall curve, optionally per class, saving to `save_dir`; `px`, `py` are lists, `ap` is Nx2
     array, `names` optional.
     """

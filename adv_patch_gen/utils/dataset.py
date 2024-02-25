@@ -31,36 +31,34 @@ class YOLODataset(Dataset):
         shuffle: Whether or not to shuffle the dataset.
     """
 
-    def __init__(self,
-                 image_dir: str,
-                 label_dir: str,
-                 max_labels: int,
-                 model_in_sz: Tuple[int, int],
-                 use_even_odd_images: str = "all",
-                 transform: Optional[torch.nn.Module] = None, 
-                 filter_class_ids: Optional[np.array] = None,
-                 min_pixel_area: Optional[int] = None,
-                 shuffle: bool = True):
+    def __init__(
+        self,
+        image_dir: str,
+        label_dir: str,
+        max_labels: int,
+        model_in_sz: Tuple[int, int],
+        use_even_odd_images: str = "all",
+        transform: Optional[torch.nn.Module] = None,
+        filter_class_ids: Optional[np.array] = None,
+        min_pixel_area: Optional[int] = None,
+        shuffle: bool = True,
+    ):
         assert use_even_odd_images in {"all", "even", "odd"}, "use_even_odd param can only be all, even or odd"
         image_paths = glob.glob(osp.join(image_dir, "*"))
         label_paths = glob.glob(osp.join(label_dir, "*"))
-        image_paths = sorted(
-            [p for p in image_paths if osp.splitext(p)[-1] in IMG_EXTNS])
-        label_paths = sorted(
-            [p for p in label_paths if osp.splitext(p)[-1] in {".txt"}])
+        image_paths = sorted([p for p in image_paths if osp.splitext(p)[-1] in IMG_EXTNS])
+        label_paths = sorted([p for p in label_paths if osp.splitext(p)[-1] in {".txt"}])
 
         # if use_even_odd_images is set, use images with even/odd numbers in the last char of their filenames
         if use_even_odd_images in {"even", "odd"}:
             rem = 0 if use_even_odd_images == "even" else 1
             image_paths = [p for p in image_paths if int(osp.splitext(p)[0][-1]) % 2 == rem]
             label_paths = [p for p in label_paths if int(osp.splitext(p)[0][-1]) % 2 == rem]
-        assert len(image_paths) == len(
-            label_paths), "Number of images and number of labels don't match"
+        assert len(image_paths) == len(label_paths), "Number of images and number of labels don't match"
         # all corresponding image and labels must exist
         for img, lab in zip(image_paths, label_paths):
-            if osp.basename(img).split('.')[0] != osp.basename(lab).split('.')[0]:
-                raise FileNotFoundError(
-                    f"Matching image {img} or label {lab} not found")
+            if osp.basename(img).split(".")[0] != osp.basename(lab).split(".")[0]:
+                raise FileNotFoundError(f"Matching image {img} or label {lab} not found")
         self.image_paths = image_paths
         self.label_paths = label_paths
         self.model_in_sz = model_in_sz
@@ -77,7 +75,7 @@ class YOLODataset(Dataset):
         assert idx <= len(self), "Index range error"
         img_path = self.image_paths[idx]
         lab_path = self.label_paths[idx]
-        image = Image.open(img_path).convert('RGB')
+        image = Image.open(img_path).convert("RGB")
         # check to see if label file contains any annotation data
         label = np.loadtxt(lab_path) if osp.getsize(lab_path) else np.zeros([1, 5])
         if label.ndim == 1:
@@ -99,8 +97,9 @@ class YOLODataset(Dataset):
                     label[:, 1] = 1 - label[:, 1]
         # filter boxes by bbox area pixels compared to the model in size (640x640 by default)
         if self.min_pixel_area is not None:
-            label = label[(label[:, 3] * label[:, 4]) >= (
-                self.min_pixel_area / (self.model_in_sz[0] * self.model_in_sz[1]))]
+            label = label[
+                (label[:, 3] * label[:, 4]) >= (self.min_pixel_area / (self.model_in_sz[0] * self.model_in_sz[1]))
+            ]
             label = label if len(label) > 0 else torch.zeros([1, 5])
         image = transforms.ToTensor()(image)
         label = self.pad_label(label)
@@ -118,16 +117,16 @@ class YOLODataset(Dataset):
         else:
             if img_w < img_h:
                 padding = (img_h - img_w) / 2
-                padded_img = Image.new('RGB', (img_h, img_h), color=(127, 127, 127))
+                padded_img = Image.new("RGB", (img_h, img_h), color=(127, 127, 127))
                 padded_img.paste(img, (int(padding), 0))
                 lab[:, [1]] = (lab[:, [1]] * img_w + padding) / img_h
-                lab[:, [3]] = (lab[:, [3]] * img_w / img_h)
+                lab[:, [3]] = lab[:, [3]] * img_w / img_h
             else:
                 padding = (img_w - img_h) / 2
-                padded_img = Image.new('RGB', (img_w, img_w), color=(127, 127, 127))
+                padded_img = Image.new("RGB", (img_w, img_w), color=(127, 127, 127))
                 padded_img.paste(img, (0, int(padding)))
                 lab[:, [2]] = (lab[:, [2]] * img_h + padding) / img_w
-                lab[:, [4]] = (lab[:, [4]] * img_h / img_w)
+                lab[:, [4]] = lab[:, [4]] * img_h / img_w
         padded_img = transforms.Resize(self.model_in_sz)(padded_img)
 
         return padded_img, lab
@@ -140,5 +139,5 @@ class YOLODataset(Dataset):
         if pad_size > 0:
             padded_lab = F.pad(label, (0, 0, 0, pad_size), value=0)
         else:
-            padded_lab = label[:self.max_n_labels]
+            padded_lab = label[: self.max_n_labels]
         return padded_lab

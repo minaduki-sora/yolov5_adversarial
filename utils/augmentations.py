@@ -57,15 +57,17 @@ class Albumentations:
 
 
 class BboxPatcher:
-    def __init__(self,
-                 patch_dir,
-                 rotation_range=(-20, 20),
-                 scale_range=(0.10, 0.30),
-                 brightness_range=(0.9, 1.1),
-                 contrast_range=(0.8, 1.2),
-                 m_gau_mean=(0.7, 0.9),
-                 m_gau_std=(0.1, 0.1),
-                 patch_apply_prob=0.5):
+    def __init__(
+        self,
+        patch_dir,
+        rotation_range=(-20, 20),
+        scale_range=(0.10, 0.30),
+        brightness_range=(0.9, 1.1),
+        contrast_range=(0.8, 1.2),
+        m_gau_mean=(0.7, 0.9),
+        m_gau_std=(0.1, 0.1),
+        patch_apply_prob=0.5,
+    ):
         """
         patch_dir: dir with patches
         rotation_range: rotation range in degrees
@@ -100,8 +102,9 @@ class BboxPatcher:
             patch = self.patches[np.random.randint(0, len(self.patches))]
             # add and mul with gaussian noise
             pc, ph, pw = patch.shape
-            mul_gau = torch.normal(np.random.uniform(*self.m_gau_mean),
-                                   np.random.uniform(*self.m_gau_std), (pc, ph, pw))
+            mul_gau = torch.normal(
+                np.random.uniform(*self.m_gau_mean), np.random.uniform(*self.m_gau_std), (pc, ph, pw)
+            )
             add_gau = torch.normal(0, 0.001, (pc, ph, pw))
             patch = patch * mul_gau + add_gau
 
@@ -120,7 +123,7 @@ class BboxPatcher:
             bbox_height = y2 - y1
 
             # Calculate the width and height of the patch after scaling
-            psize = max(int((bbox_width * bbox_height * scale)**(1 / 2)), 1)
+            psize = max(int((bbox_width * bbox_height * scale) ** (1 / 2)), 1)
             # patch is square
             patch_scaled_w = psize
             patch_scaled_h = psize
@@ -140,12 +143,12 @@ class BboxPatcher:
             x_pos = int(x1 + (bbox_width - patch_scaled_w) / 2)
             y_pos = int(y1 + (bbox_height - patch_scaled_h) / 2)
             # pad patch and its mask
-            padded_patch = TF.pad(patch, (x_pos, y_pos,
-                                          img_w - (x_pos + patch_scaled_w),
-                                          img_h - (y_pos + patch_scaled_h)))
-            padded_patch_mask = TF.pad(patch_mask, (x_pos, y_pos,
-                                                    img_w - (x_pos + patch_scaled_w),
-                                                    img_h - (y_pos + patch_scaled_h)))
+            padded_patch = TF.pad(
+                patch, (x_pos, y_pos, img_w - (x_pos + patch_scaled_w), img_h - (y_pos + patch_scaled_h))
+            )
+            padded_patch_mask = TF.pad(
+                patch_mask, (x_pos, y_pos, img_w - (x_pos + patch_scaled_w), img_h - (y_pos + patch_scaled_h))
+            )
 
             # Apply the patch to the image
             image = image * (1 - padded_patch_mask) + padded_patch * padded_patch_mask

@@ -18,21 +18,23 @@ class PatchTransformer(nn.Module):
     batch of labels, and pads them to the dimension of an image.
     """
 
-    def __init__(self,
-                 t_size_frac: Union[float, Tuple[float, float]] = 0.3,
-                 mul_gau_mean: Union[float, Tuple[float, float]] = (0.5, 0.8),
-                 mul_gau_std: Union[float, Tuple[float, float]] = 0.1,
-                 x_off_loc: Tuple[float, float] = [-0.25, 0.25],
-                 y_off_loc: Tuple[float, float] = [-0.25, 0.25],
-                 dev: torch.device = torch.device("cuda:0")):
+    def __init__(
+        self,
+        t_size_frac: Union[float, Tuple[float, float]] = 0.3,
+        mul_gau_mean: Union[float, Tuple[float, float]] = (0.5, 0.8),
+        mul_gau_std: Union[float, Tuple[float, float]] = 0.1,
+        x_off_loc: Tuple[float, float] = [-0.25, 0.25],
+        y_off_loc: Tuple[float, float] = [-0.25, 0.25],
+        dev: torch.device = torch.device("cuda:0"),
+    ):
         super(PatchTransformer, self).__init__()
         # convert to duplicated lists/tuples to unpack and send to np.random.uniform
         self.t_size_frac = [t_size_frac, t_size_frac] if isinstance(t_size_frac, float) else t_size_frac
         self.m_gau_mean = [mul_gau_mean, mul_gau_mean] if isinstance(mul_gau_mean, float) else mul_gau_mean
         self.m_gau_std = [mul_gau_std, mul_gau_std] if isinstance(mul_gau_std, float) else mul_gau_std
-        assert (len(self.t_size_frac) == 2 and
-                len(self.m_gau_mean) == 2 and
-                len(self.m_gau_std) == 2), "Range must have 2 values"
+        assert (
+            len(self.t_size_frac) == 2 and len(self.m_gau_mean) == 2 and len(self.m_gau_std) == 2
+        ), "Range must have 2 values"
         self.x_off_loc = x_off_loc
         self.y_off_loc = y_off_loc
         self.dev = dev
@@ -47,12 +49,19 @@ class PatchTransformer(nn.Module):
 
         self.tensor = torch.FloatTensor if "cpu" in str(dev) else torch.cuda.FloatTensor
 
-    def forward(self, adv_patch, lab_batch, model_in_sz, use_mul_add_gau=True, do_transforms=True, do_rotate=True, rand_loc=True):
+    def forward(
+        self, adv_patch, lab_batch, model_in_sz, use_mul_add_gau=True, do_transforms=True, do_rotate=True, rand_loc=True
+    ):
         # add gaussian noise to reduce contrast with a stohastic process
         p_c, p_h, p_w = adv_patch.shape
         if use_mul_add_gau:
-            mul_gau = torch.normal(np.random.uniform(*self.m_gau_mean), np.random.uniform(*self.m_gau_std), (p_c, p_h, p_w), device=self.dev)
-            add_gau = torch.normal(0, 0.001, (p_c, p_h, p_w), device=self.dev) 
+            mul_gau = torch.normal(
+                np.random.uniform(*self.m_gau_mean),
+                np.random.uniform(*self.m_gau_std),
+                (p_c, p_h, p_w),
+                device=self.dev,
+            )
+            add_gau = torch.normal(0, 0.001, (p_c, p_h, p_w), device=self.dev)
             adv_patch = adv_patch * mul_gau + add_gau
         adv_patch = self.medianpooler(adv_patch.unsqueeze(0))
         m_h, m_w = model_in_sz
@@ -61,28 +70,24 @@ class PatchTransformer(nn.Module):
         # Make a batch of patches
         adv_patch = adv_patch.unsqueeze(0)
         adv_batch = adv_patch.expand(
-            lab_batch.size(0), lab_batch.size(1), -1, -1, -1)  # [bsize, max_bbox_labels, pchannel, pheight, pwidth]
+            lab_batch.size(0), lab_batch.size(1), -1, -1, -1
+        )  # [bsize, max_bbox_labels, pchannel, pheight, pwidth]
         batch_size = torch.Size((lab_batch.size(0), lab_batch.size(1)))
 
         # Contrast, brightness and noise transforms
         if do_transforms:
             # Create random contrast tensor
-            contrast = self.tensor(batch_size).uniform_(
-                self.min_contrast, self.max_contrast)
+            contrast = self.tensor(batch_size).uniform_(self.min_contrast, self.max_contrast)
             contrast = contrast.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-            contrast = contrast.expand(-1, -1, adv_batch.size(-3),
-                                       adv_batch.size(-2), adv_batch.size(-1))
+            contrast = contrast.expand(-1, -1, adv_batch.size(-3), adv_batch.size(-2), adv_batch.size(-1))
 
             # Create random brightness tensor
-            brightness = self.tensor(batch_size).uniform_(
-                self.min_brightness, self.max_brightness)
+            brightness = self.tensor(batch_size).uniform_(self.min_brightness, self.max_brightness)
             brightness = brightness.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-            brightness = brightness.expand(-1, -1, adv_batch.size(-3),
-                                           adv_batch.size(-2), adv_batch.size(-1))
+            brightness = brightness.expand(-1, -1, adv_batch.size(-3), adv_batch.size(-2), adv_batch.size(-1))
 
             # Create random noise tensor
-            noise = self.tensor(
-                adv_batch.size()).uniform_(-1, 1) * self.noise_factor
+            noise = self.tensor(adv_batch.size()).uniform_(-1, 1) * self.noise_factor
 
             # Apply contrast/brightness/noise, clamp
             adv_batch = adv_batch * contrast + brightness + noise
@@ -100,13 +105,12 @@ class PatchTransformer(nn.Module):
         msk_batch = self.tensor(cls_mask.size()).fill_(1)
 
         # Pad patch and mask to image dimensions
-        patch_pad = nn.ConstantPad2d(
-            (int(pad + 0.5), int(pad), int(pad + 0.5), int(pad)), 0)
+        patch_pad = nn.ConstantPad2d((int(pad + 0.5), int(pad), int(pad + 0.5), int(pad)), 0)
         adv_batch = patch_pad(adv_batch)
         msk_batch = patch_pad(msk_batch)
 
         # Rotation and rescaling transforms
-        anglesize = (lab_batch.size(0) * lab_batch.size(1))
+        anglesize = lab_batch.size(0) * lab_batch.size(1)
         if do_rotate:
             angle = self.tensor(anglesize).uniform_(self.minangle, self.maxangle)
         else:
@@ -120,19 +124,18 @@ class PatchTransformer(nn.Module):
         lab_batch_scaled[:, :, 3] = lab_batch[:, :, 3] * m_w
         lab_batch_scaled[:, :, 4] = lab_batch[:, :, 4] * m_w
         tsize = np.random.uniform(*self.t_size_frac)
-        target_size = torch.sqrt(((lab_batch_scaled[:, :, 3].mul(tsize)) ** 2) +
-                                 ((lab_batch_scaled[:, :, 4].mul(tsize)) ** 2))
+        target_size = torch.sqrt(
+            ((lab_batch_scaled[:, :, 3].mul(tsize)) ** 2) + ((lab_batch_scaled[:, :, 4].mul(tsize)) ** 2)
+        )
 
         target_x = lab_batch[:, :, 1].view(np.prod(batch_size))
         target_y = lab_batch[:, :, 2].view(np.prod(batch_size))
         targetoff_x = lab_batch[:, :, 3].view(np.prod(batch_size))
         targetoff_y = lab_batch[:, :, 4].view(np.prod(batch_size))
         if rand_loc:
-            off_x = targetoff_x * \
-                (self.tensor(targetoff_x.size()).uniform_(*self.x_off_loc))
+            off_x = targetoff_x * (self.tensor(targetoff_x.size()).uniform_(*self.x_off_loc))
             target_x = target_x + off_x
-            off_y = targetoff_y * \
-                (self.tensor(targetoff_y.size()).uniform_(*self.x_off_loc))
+            off_y = targetoff_y * (self.tensor(targetoff_y.size()).uniform_(*self.x_off_loc))
             target_y = target_y + off_y
         scale = target_size / current_patch_size
         scale = scale.view(anglesize)
@@ -174,7 +177,7 @@ class PatchApplier(nn.Module):
     Module providing the functionality necessary to apply a patch to all detections in all images in the batch.
     The patch (adv_batch) has the same size as the image, just is zero everywhere there isn't a patch.
     If patch_alpha == 1 (default), just overwrite the background image values with the patch values.
-    Else, blend the patch with the image 
+    Else, blend the patch with the image
     See: https://learnopencv.com/alpha-blending-using-opencv-cpp-python/
          https://stackoverflow.com/questions/49737541/merge-two-images-with-alpha-channel/49738078
         I = \alpha F + (1 - \alpha) B
@@ -195,8 +198,7 @@ class PatchApplier(nn.Module):
             # alpha blend
             else:
                 # get combo of image and adv
-                alpha_blend = self.patch_alpha * adv + \
-                    (1.0 - self.patch_alpha) * img_batch
+                alpha_blend = self.patch_alpha * adv + (1.0 - self.patch_alpha) * img_batch
                 # apply alpha blend where the patch is non-zero
                 img_batch = torch.where((adv == 0), img_batch, alpha_blend)
 

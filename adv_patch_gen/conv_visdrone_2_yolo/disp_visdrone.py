@@ -1,5 +1,6 @@
 import argparse
 import sys
+
 sys.path.append(".")
 
 import cv2
@@ -17,20 +18,30 @@ CLASS_IDS_2_CONSIDER = {4, 5, 6, 9}
 
 
 def get_parsed_args():
-    parser = argparse.ArgumentParser(
-        description="Disp VisDrone annotated images")
-    parser.add_argument('-a', '--source_annot_dir', type=str, dest="source_annot_dir", required=True,
-                        help='VisDrone annotation source dir. Should contain annot txt files (default: %(default)s)')
-    parser.add_argument('-i', '--source_image_dir', type=str, dest="source_image_dir", required=True,
-                        help='VisDrone images source dir. Should contain image files (default: %(default)s)')
+    parser = argparse.ArgumentParser(description="Disp VisDrone annotated images")
+    parser.add_argument(
+        "-a",
+        "--source_annot_dir",
+        type=str,
+        dest="source_annot_dir",
+        required=True,
+        help="VisDrone annotation source dir. Should contain annot txt files (default: %(default)s)",
+    )
+    parser.add_argument(
+        "-i",
+        "--source_image_dir",
+        type=str,
+        dest="source_image_dir",
+        required=True,
+        help="VisDrone images source dir. Should contain image files (default: %(default)s)",
+    )
     args = parser.parse_args()
     return args
 
 
 def main():
     args = get_parsed_args()
-    annot_paths, image_paths = get_annot_img_paths(
-        args.source_annot_dir, args.source_image_dir, ANNOT_EXT, IMG_EXT)
+    annot_paths, image_paths = get_annot_img_paths(args.source_annot_dir, args.source_image_dir, ANNOT_EXT, IMG_EXT)
 
     for ant, img in zip(annot_paths, image_paths):
         image = cv2.imread(img)

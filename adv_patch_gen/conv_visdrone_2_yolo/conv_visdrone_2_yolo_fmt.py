@@ -34,23 +34,58 @@ IMG_EXT = {".jpg", ".png"}
 
 
 def get_parsed_args():
-    parser = argparse.ArgumentParser(
-        description="VisDrone to YOLO annot format")
-    parser.add_argument('--sad', '--source_annot_dir', type=str, dest="source_annot_dir", required=True,
-                        help='VisDrone annotation source dir. Should contain annot txt files (default: %(default)s)')
-    parser.add_argument('--sid', '--source_image_dir', type=str, dest="source_image_dir", required=True,
-                        help='VisDrone images source dir. Should contain image files (default: %(default)s)')
-    parser.add_argument('--td', '--target_annot_dir', type=str, dest="target_annot_dir", required=True,
-                        help='YOLO annotation target dir. YOLO by default uses dirname labels (default: %(default)s)')
-    parser.add_argument('--dc', '--low_dim_cutoff', type=int, dest="low_dim_cutoff", default=None,
-                        help='All bboxes with dims(w/h) < cutoff pixel are ignored i.e 400 (default: %(default)s)')
-    parser.add_argument('--ac', '--low_area_cutoff', type=float, dest="low_area_cutoff", default=None,
-                        help='All bboxes with area perc < cutoff area perc are ignored i.e. 0.01 (default: %(default)s)')
+    parser = argparse.ArgumentParser(description="VisDrone to YOLO annot format")
+    parser.add_argument(
+        "--sad",
+        "--source_annot_dir",
+        type=str,
+        dest="source_annot_dir",
+        required=True,
+        help="VisDrone annotation source dir. Should contain annot txt files (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--sid",
+        "--source_image_dir",
+        type=str,
+        dest="source_image_dir",
+        required=True,
+        help="VisDrone images source dir. Should contain image files (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--td",
+        "--target_annot_dir",
+        type=str,
+        dest="target_annot_dir",
+        required=True,
+        help="YOLO annotation target dir. YOLO by default uses dirname labels (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--dc",
+        "--low_dim_cutoff",
+        type=int,
+        dest="low_dim_cutoff",
+        default=None,
+        help="All bboxes with dims(w/h) < cutoff pixel are ignored i.e 400 (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--ac",
+        "--low_area_cutoff",
+        type=float,
+        dest="low_area_cutoff",
+        default=None,
+        help="All bboxes with area perc < cutoff area perc are ignored i.e. 0.01 (default: %(default)s)",
+    )
     args = parser.parse_args()
     return args
 
 
-def conv_visdrone_2_yolo(source_annot_dir: str, source_image_dir: str, target_annot_dir: str, low_dim_cutoff: Optional[int], low_area_cutoff: Optional[float]):
+def conv_visdrone_2_yolo(
+    source_annot_dir: str,
+    source_image_dir: str,
+    target_annot_dir: str,
+    low_dim_cutoff: Optional[int],
+    low_area_cutoff: Optional[float],
+):
     """
     low_dim_cutoff: int, lower cutoff for bounding boxes width/height dims in pixels
     low_area_cutoff: float, lower area perc cutoff for bounding box areas in perc
@@ -64,19 +99,19 @@ def conv_visdrone_2_yolo(source_annot_dir: str, source_image_dir: str, target_an
     assert len(src_image_paths) == len(src_annot_paths)
 
     os.makedirs(target_annot_dir, exist_ok=True)
-    low_dim_cutoff = float('-inf') if not low_dim_cutoff else low_dim_cutoff
-    low_area_cutoff = float('-inf') if not low_area_cutoff else low_area_cutoff
-    target_img_list_fpath = osp.join(osp.dirname(target_annot_dir), source_annot_dir.split('/')[-2].lower()+".txt")
+    low_dim_cutoff = float("-inf") if not low_dim_cutoff else low_dim_cutoff
+    low_area_cutoff = float("-inf") if not low_area_cutoff else low_area_cutoff
+    target_img_list_fpath = osp.join(osp.dirname(target_annot_dir), source_annot_dir.split("/")[-2].lower() + ".txt")
 
     with tqdm.tqdm(total=len(src_image_paths)) as pbar, open(target_img_list_fpath, "w") as imgw:
         orig_box_count = new_box_count = 0
         for src_annot_file, src_image_file in zip(src_annot_paths, src_image_paths):
             try:
                 iw, ih = imagesize.get(src_image_file)
-                target_annot_file = osp.join(target_annot_dir, src_annot_file.split('/')[-1])
+                target_annot_file = osp.join(target_annot_dir, src_annot_file.split("/")[-1])
                 with open(src_annot_file, "r") as fr, open(target_annot_file, "w") as fw:
                     for coords in fr:
-                        annots = list(map(int, coords.strip().strip(',').split(',')))
+                        annots = list(map(int, coords.strip().strip(",").split(",")))
                         x, y = annots[0], annots[1]
                         w, h = annots[2], annots[3]
                         score, class_id, occu = annots[4], annots[5], annots[7]
@@ -95,8 +130,11 @@ def conv_visdrone_2_yolo(source_annot_dir: str, source_image_dir: str, target_an
                             class_id = CLASS_ID_REMAP[class_id] if CLASS_ID_REMAP else class_id
                             fw.write(f"{class_id} {xc/iw} {yc/ih} {w/iw} {h/ih}\n")
                             new_box_count += 1
-                target_image_path = osp.join(osp.dirname(osp.dirname(target_annot_file)), "images",
-                                             osp.basename(target_annot_file).split('.')[0] + osp.splitext(src_image_file)[1])
+                target_image_path = osp.join(
+                    osp.dirname(osp.dirname(target_annot_file)),
+                    "images",
+                    osp.basename(target_annot_file).split(".")[0] + osp.splitext(src_image_file)[1],
+                )
                 imgw.write(f"{osp.abspath(target_image_path)}\n")
             except Exception as excep:
                 print(f"{excep}: Error reading img {src_image_file}")
@@ -108,8 +146,9 @@ def conv_visdrone_2_yolo(source_annot_dir: str, source_image_dir: str, target_an
 def main():
     args = get_parsed_args()
     print(args)
-    conv_visdrone_2_yolo(args.source_annot_dir, args.source_image_dir, args.target_annot_dir,
-                         args.low_dim_cutoff, args.low_area_cutoff)
+    conv_visdrone_2_yolo(
+        args.source_annot_dir, args.source_image_dir, args.target_annot_dir, args.low_dim_cutoff, args.low_area_cutoff
+    )
 
 
 if __name__ == "__main__":

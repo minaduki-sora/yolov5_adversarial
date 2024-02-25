@@ -68,7 +68,7 @@ python disp_yolo.py -a ANNOTS_DIR -i IMAGES_DIR
 
 Note: The classes to consider and any additional re-assingment of classes must be done with variables `CLASS_2_CONSIDER` and `CLASS_ID_REMAP` inside `conv_visdrone_2_yolo_fmt.py`.
 
-Can use optional params `low_dim_cutoff` and `low_area_cutoff` to cutoff bunding boxes that do not satisfy a minimum box dimenison or area percentage cutoff.
+Can use optional params `low_dim_cutoff` and `low_area_cutoff` to cutoff bunding boxes that do not satisfy a minimum box dimension or area percentage cutoff.
 
 ```shell
 # example conversion of VisDrone train, val and test set annotations to YOLO format. Use -h for all options

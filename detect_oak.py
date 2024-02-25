@@ -17,7 +17,7 @@ import onnxruntime
 
 from models.common import DetectMultiBackend
 from utils.augmentations import letterbox
-from utils.general import (LOGGER, Profile, cv2, non_max_suppression, scale_boxes)
+from utils.general import LOGGER, Profile, cv2, non_max_suppression, scale_boxes
 from utils.plots import Annotator, colors
 from utils.torch_utils import select_device
 
@@ -46,7 +46,7 @@ class LoadOAKStream:
 
         LOGGER.info(f"Cam FPS: {cam_rgb.getFps()}")
         # Start thread to read frames from video stream
-        self.frame = float('inf')  # infinite stream fallback
+        self.frame = float("inf")  # infinite stream fallback
 
         with depthai.Device(self.pipeline) as device:
             q_rgb = device.getOutputQueue("rgb")
@@ -61,7 +61,7 @@ class LoadOAKStream:
         self.auto = auto and self.rect
         self.transforms = transforms  # optional
         if not self.rect:
-            LOGGER.warning('WARNING ⚠️ Stream shapes differ. For optimal performance supply similarly-shaped streams.')
+            LOGGER.warning("WARNING ⚠️ Stream shapes differ. For optimal performance supply similarly-shaped streams.")
 
     def update(self):
         n, f = 0, self.frame
@@ -75,7 +75,7 @@ class LoadOAKStream:
                         im = in_rgb.getCvFrame()
                         self.img = im
                     else:
-                        LOGGER.warning('WARNING ⚠️ Video stream unresponsive, please check your IP camera connection.')
+                        LOGGER.warning("WARNING ⚠️ Video stream unresponsive, please check your IP camera connection.")
                         self.imgs = np.zeros_like(self.img)
                 time.sleep(0.0)  # wait time
 
@@ -85,7 +85,7 @@ class LoadOAKStream:
 
     def __next__(self):
         self.count += 1
-        if not self.thread.is_alive() or cv2.waitKey(2) == ord('q'):  # q to quit
+        if not self.thread.is_alive() or cv2.waitKey(2) == ord("q"):  # q to quit
             cv2.destroyAllWindows()
             raise StopIteration
 
@@ -105,7 +105,7 @@ class LoadOAKStream:
 
 def inference(
     weights: str = "runs/s_coco_e300_4Class_PeopleVehicle/weights/best.pt",
-    device: str = 'cpu',
+    device: str = "cpu",
     imgsz: Tuple[int, int] = (640, 640),
     conf_thres: float = 0.5,
     iou_thres: float = 0.45,
@@ -116,7 +116,7 @@ def inference(
     num_skip_frames: int = 0,
     cam_fps: int = 20,
     debug: bool = False,
-    **kwrags
+    **kwrags,
 ) -> None:
     """Run Object Detection Application
 
@@ -198,7 +198,7 @@ def inference(
                             for *xyxy, conf, cls in reversed(det):
                                 # Add bbox to image
                                 c = int(cls)  # integer class
-                                label = f'{names[c]} {conf:.2f}'
+                                label = f"{names[c]} {conf:.2f}"
                                 annotator.box_label(xyxy, label, color=colors(c, True))
 
                         # Stream results
@@ -208,12 +208,12 @@ def inference(
 
                 end = time.time()
                 inf_time = end - start
-                fps = 1. / inf_time
+                fps = 1.0 / inf_time
                 if debug:
-                    print(f'Inference FPS: {fps:.2f} FPS')
+                    print(f"Inference FPS: {fps:.2f} FPS")
 
                 counter += 1
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 
         cv2.destroyAllWindows()
@@ -221,7 +221,7 @@ def inference(
 
 def inference_threaded(
     weights: str = "runs/s_coco_e300_4Class_PeopleVehicle/weights/best.pt",
-    device: str = 'cpu',
+    device: str = "cpu",
     imgsz: Tuple[int, int] = (640, 640),
     conf_thres: float = 0.5,
     iou_thres: float = 0.45,
@@ -232,7 +232,7 @@ def inference_threaded(
     num_skip_frames: int = 0,
     cam_fps: int = 20,
     debug: bool = False,
-    **kwrags
+    **kwrags,
 ) -> None:
     """Run Object Detection Application
 
@@ -285,7 +285,7 @@ def inference_threaded(
                     for *xyxy, conf, cls in reversed(det):
                         # Add bbox to image
                         c = int(cls)  # integer class
-                        label = f'{names[c]} {conf:.2f}'
+                        label = f"{names[c]} {conf:.2f}"
                         annotator.box_label(xyxy, label, color=colors(c, True))
 
                 # Stream results
@@ -295,9 +295,9 @@ def inference_threaded(
 
             end = time.time()
             inf_time = end - start
-            fps = 1. / inf_time
+            fps = 1.0 / inf_time
             if debug:
-                print(f'Inference FPS: {fps:.2f} FPS')
+                print(f"Inference FPS: {fps:.2f} FPS")
 
             counter += 1
 
@@ -307,7 +307,7 @@ def inference_threaded(
 def inference_threaded_with_defense(
     weights: str = "runs/s_coco_e300_4Class_PeopleVehicle/weights/best.pt",
     def_weights: str = "runs/defendern250.onnx",
-    device: str = 'cpu',
+    device: str = "cpu",
     disp_res: Tuple[int, int] = (960, 960),
     conf_thres: float = 0.5,
     iou_thres: float = 0.45,
@@ -351,7 +351,7 @@ def inference_threaded_with_defense(
         start = time.time()
 
         if counter % (num_skip_frames + 1) == 0:
-            im_def = np.transpose(im.copy(), (0, 2, 3, 1)).astype(np.float32) / 255.  # BCHW to BHWC
+            im_def = np.transpose(im.copy(), (0, 2, 3, 1)).astype(np.float32) / 255.0  # BCHW to BHWC
             with dt[0]:
                 im = torch.from_numpy(im).to(model.device)
                 im = im.half() if model.fp16 else im.float()  # uint8 to fp16/32
@@ -360,10 +360,10 @@ def inference_threaded_with_defense(
                     im = im[None]  # expand for batch dim
 
             # Inference defense
-            im_def = 2. * im_def - 1.  # [0, 1] to [-1, 1]
-            updates = onnx_session.run([], {onnx_input_name: im_def})[0] * 2.  # get def updates
-            im_def = np.clip(updates + im_def, -1., 1.)
-            im_def = (im_def + 1.) / 2.   # [-1, 1] to [0, 1]
+            im_def = 2.0 * im_def - 1.0  # [0, 1] to [-1, 1]
+            updates = onnx_session.run([], {onnx_input_name: im_def})[0] * 2.0  # get def updates
+            im_def = np.clip(updates + im_def, -1.0, 1.0)
+            im_def = (im_def + 1.0) / 2.0  # [-1, 1] to [0, 1]
 
             im_def = np.transpose(im_def, (0, 3, 1, 2))  # BHWC to BCHW
             im_def = torch.from_numpy(im_def).to(model.device)
@@ -388,13 +388,13 @@ def inference_threaded_with_defense(
                     for *xyxy, conf, cls in reversed(det):
                         # Add bbox to image
                         c = int(cls)  # integer class
-                        label = f'{names[c]} {conf:.2f}'
+                        label = f"{names[c]} {conf:.2f}"
                         annotator.box_label(xyxy, label, color=colors(c, True))
 
                 # Stream results
                 im0 = annotator.result()
 
-            im02 = (im_def.cpu().numpy().transpose((0, 2, 3, 1)) * 255.).astype(np.uint8)[0]  # BCHW to BHWC
+            im02 = (im_def.cpu().numpy().transpose((0, 2, 3, 1)) * 255.0).astype(np.uint8)[0]  # BCHW to BHWC
             for i, det in enumerate(pred_def):  # per image
                 annotator = Annotator(im02, line_width=1, example=str(names))
                 if len(det):
@@ -404,7 +404,7 @@ def inference_threaded_with_defense(
                     for *xyxy, conf, cls in reversed(det):
                         # Add bbox to image
                         c = int(cls)  # integer class
-                        label = f'{names[c]} {conf:.2f}'
+                        label = f"{names[c]} {conf:.2f}"
                         annotator.box_label(xyxy, label, color=colors(c, True))
 
                 # Stream results
@@ -416,27 +416,27 @@ def inference_threaded_with_defense(
 
             end = time.time()
             inf_time = end - start
-            fps = 1. / inf_time
+            fps = 1.0 / inf_time
             if debug:
-                print(f'Inference FPS: {fps:.2f} FPS')
+                print(f"Inference FPS: {fps:.2f} FPS")
 
             counter += 1
 
     cv2.destroyAllWindows()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # "weights": "yolov5s.pt", # to use the base coco 80 class model
     kwargs = {
         "weights": "runs/s_coco_e300_4Class_PeopleVehicle/weights/best.pt",
         "def_weights": "runs/defendern250.onnx",
-        "device": 'cpu',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
+        "device": "cpu",  # cuda device, i.e. 0 or 0,1,2,3 or cpu
         "conf_thres": 0.5,  # confidence threshold
         "max_det": 2,  # maximum detections per image
         "classes": [0],  # filter by class: --class 0, or --class 0 2 3
         "num_skip_frames": 0,  # num of frames to skip to speed processing
         "cam_fps": 20,  # only for oak-D camera
-        "debug": False  # prints fps info
+        "debug": False,  # prints fps info
     }
 
     # inference(**kwargs)

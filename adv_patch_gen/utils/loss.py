@@ -22,10 +22,10 @@ class MaxProbExtractor(nn.Module):
         """
         output must be of the shape [batch, -1, 5 + num_cls]
         """
-        # get values neccesary for transformation
-        assert (output.size(-1) == (5 + self.config.n_classes))
+        # get values necessary for transformation
+        assert output.size(-1) == (5 + self.config.n_classes)
 
-        class_confs = output[:, :, 5:5 + self.config.n_classes]  # [batch, -1, n_classes]
+        class_confs = output[:, :, 5 : 5 + self.config.n_classes]  # [batch, -1, n_classes]
         objectness_score = output[:, :, 4]  # [batch, -1, 5 + num_cls] -> [batch, -1], no need to run sigmoid here
 
         if self.config.objective_class_id is not None:
@@ -63,8 +63,7 @@ class SaliencyLoss(nn.Module):
 
         mu_rg, sigma_rg = torch.mean(rg) + 1e-8, torch.std(rg) + 1e-8
         mu_yb, sigma_yb = torch.mean(yb) + 1e-8, torch.std(yb) + 1e-8
-        sl = torch.sqrt(sigma_rg**2 + sigma_yb**2) + \
-            (0.3 * torch.sqrt(mu_rg**2 + mu_yb**2))
+        sl = torch.sqrt(sigma_rg**2 + sigma_yb**2) + (0.3 * torch.sqrt(mu_rg**2 + mu_yb**2))
         return sl / torch.numel(adv_patch)
 
 
@@ -80,15 +79,13 @@ class TotalVariationLoss(nn.Module):
     def forward(self, adv_patch: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            adv_patch: Tensor of shape [C, H, W] 
+            adv_patch: Tensor of shape [C, H, W]
         """
         # calc diff in patch rows
-        tvcomp_r = torch.sum(
-            torch.abs(adv_patch[:, :, 1:] - adv_patch[:, :, :-1]+0.000001), dim=0)
+        tvcomp_r = torch.sum(torch.abs(adv_patch[:, :, 1:] - adv_patch[:, :, :-1] + 0.000001), dim=0)
         tvcomp_r = torch.sum(torch.sum(tvcomp_r, dim=0), dim=0)
         # calc diff in patch columns
-        tvcomp_c = torch.sum(
-            torch.abs(adv_patch[:, 1:, :] - adv_patch[:, :-1, :]+0.000001), dim=0)
+        tvcomp_c = torch.sum(torch.abs(adv_patch[:, 1:, :] - adv_patch[:, :-1, :] + 0.000001), dim=0)
         tvcomp_c = torch.sum(torch.sum(tvcomp_c, dim=0), dim=0)
         tv = tvcomp_r + tvcomp_c
         return tv / torch.numel(adv_patch)
@@ -99,21 +96,22 @@ class NPSLoss(nn.Module):
     Module providing the functionality necessary to calculate the non-printability score (NMS) of an adversarial patch.
     However, a summation of the differences is used instead of the total product to calc the NPSLoss
     Reference: https://users.ece.cmu.edu/~lbauer/papers/2016/ccs2016-face-recognition.pdf
-        Args: 
+        Args:
             triplet_scores_fpath: str, path to csv file with RGB triplets sep by commas in newlines
             size: Tuple[int, int], Tuple with height, width of the patch
     """
 
     def __init__(self, triplet_scores_fpath: str, size: Tuple[int, int]):
         super(NPSLoss, self).__init__()
-        self.printability_array = nn.Parameter(self.get_printability_array(
-            triplet_scores_fpath, size), requires_grad=False)
+        self.printability_array = nn.Parameter(
+            self.get_printability_array(triplet_scores_fpath, size), requires_grad=False
+        )
 
     def forward(self, adv_patch):
-        # calculate euclidian distance between colors in patch and colors in printability_array
+        # calculate euclidean distance between colors in patch and colors in printability_array
         # square root of sum of squared difference
-        color_dist = (adv_patch - self.printability_array + 0.000001)
-        color_dist = color_dist ** 2
+        color_dist = adv_patch - self.printability_array + 0.000001
+        color_dist = color_dist**2
         color_dist = torch.sum(color_dist, 1) + 0.000001
         color_dist = torch.sqrt(color_dist)
         # use the min distance
@@ -126,13 +124,13 @@ class NPSLoss(nn.Module):
     def get_printability_array(self, triplet_scores_fpath: str, size: Tuple[int, int]) -> torch.Tensor:
         """
         Get printability tensor array holding the rgb triplets (range [0,1]) loaded from triplet_scores_fpath
-        Args: 
+        Args:
             triplet_scores_fpath: str, path to csv file with RGB triplets sep by commas in newlines
             size: Tuple[int, int], Tuple with height, width of the patch
         """
         ref_triplet_list = []
         # read in reference printability triplets into a list
-        with open(triplet_scores_fpath, 'r', encoding="utf-8") as f:
+        with open(triplet_scores_fpath, "r", encoding="utf-8") as f:
             for line in f:
                 ref_triplet_list.append(line.strip().split(","))
 
@@ -140,8 +138,8 @@ class NPSLoss(nn.Module):
         printability_array = []
         for ref_triplet in ref_triplet_list:
             r, g, b = map(float, ref_triplet)
-            ref_tensor_img = torch.stack([torch.full((p_h, p_w), r),
-                                          torch.full((p_h, p_w), g),
-                                          torch.full((p_h, p_w), b)])
+            ref_tensor_img = torch.stack(
+                [torch.full((p_h, p_w), r), torch.full((p_h, p_w), g), torch.full((p_h, p_w), b)]
+            )
             printability_array.append(ref_tensor_img.float())
         return torch.stack(printability_array)

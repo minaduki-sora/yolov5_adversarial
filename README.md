@@ -14,9 +14,9 @@ Physical Adversarial Patch Defense
 
 https://github.com/SamSamhuns/yolov5_adversarial/assets/13418507/b389449f-98a4-4167-9208-771cb98ce3ce
 
-VisDrone Dataset Patch     |  Custom Dataset Patch
-:-------------------------:|:-------------------------:
-<img src="adv_patch_gen/media/visdrone_p.png" width="256" />  |  <img src="adv_patch_gen/media/custom_p.png" width="256" />
+|                    VisDrone Dataset Patch                    |                    Custom Dataset Patch                    |
+| :----------------------------------------------------------: | :--------------------------------------------------------: |
+| <img src="adv_patch_gen/media/visdrone_p.png" width="256" /> | <img src="adv_patch_gen/media/custom_p.png" width="256" /> |
 
 Note: Install all required dependencies as mentioned in the main YOLOv5 repository and install additional yolov5 adversarial dependency as follows:
 
@@ -32,6 +32,7 @@ Detailed instructions for setup and docker use at [adv_patch_gen/README.md](adv_
 ```shell
 python train_patch.py --cfg adv_patch_gen/configs/base.json
 ```
+
 Instructions in creating the config json file present at [adv_patch_gen/configs/README.md](adv_patch_gen/configs/README.md).
 
 ## Test the performance of the adversarial patch
@@ -41,11 +42,11 @@ python test_patch.py --cfg CONFIG_JSON_FILE -w YOLOV5_TARGET_MODEL_WEIGHTS_PATH 
 python test_patch.py -h  # to get a list of all testing options
 ```
 
-## Attack Sccess Rate of patches tested against the VisDrone-2019 dataset
+## Attack Success Rate of patches tested against the VisDrone-2019 dataset
 
-ASR against coco-pretrained & scratch-trained  |  ASR against increasing detection confidence threshold
-:-------------------------:|:-------------------------:
-<img src="adv_patch_gen/media/asr_s_coco_2_s_coco_s_scratch.png" />  |  <img src="adv_patch_gen/media/plot_all_avg_0_76.png" />
+|            ASR against coco-pretrained & scratch-trained            |  ASR against increasing detection confidence threshold  |
+| :-----------------------------------------------------------------: | :-----------------------------------------------------: |
+| <img src="adv_patch_gen/media/asr_s_coco_2_s_coco_s_scratch.png" /> | <img src="adv_patch_gen/media/plot_all_avg_0_76.png" /> |
 
 <div align="center">
   <p>
