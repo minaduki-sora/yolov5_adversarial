@@ -1,6 +1,4 @@
-"""
-Loss functions used in patch generation
-"""
+"""Loss functions used in patch generation."""
 from typing import Tuple
 
 import torch
@@ -19,9 +17,7 @@ class MaxProbExtractor(nn.Module):
         self.config = config
 
     def forward(self, output: torch.Tensor):
-        """
-        output must be of the shape [batch, -1, 5 + num_cls]
-        """
+        """Output must be of the shape [batch, -1, 5 + num_cls]"""
         # get values necessary for transformation
         assert output.size(-1) == (5 + self.config.n_classes)
 
@@ -43,7 +39,9 @@ class MaxProbExtractor(nn.Module):
 
 
 class SaliencyLoss(nn.Module):
-    """Implementation of the colorfulness metric as the saliency loss.
+    """
+    Implementation of the colorfulness metric as the saliency loss.
+
     The smaller the value, the less colorful the image.
     Reference: https://infoscience.epfl.ch/record/33994/files/HaslerS03.pdf
     """

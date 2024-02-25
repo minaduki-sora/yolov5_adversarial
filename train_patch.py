@@ -1,5 +1,5 @@
 """
-Training code for Adversarial patch training
+Training code for Adversarial patch training.
 
 python train_patch.py --cfg config_json_file
 """
@@ -48,9 +48,7 @@ torch.backends.cudnn.benchmark = False
 
 
 class PatchTrainer:
-    """
-    Module for training on dataset to generate adv patches
-    """
+    """Module for training on dataset to generate adv patches."""
 
     def __init__(self, cfg: edict):
         self.cfg = cfg
@@ -111,9 +109,7 @@ class PatchTrainer:
         self.epoch_length = len(self.train_loader)
 
     def init_tensorboard(self, log_dir: str = None, port: int = 6006, run_tb=True):
-        """
-        Initialize tensorboard with optional name
-        """
+        """Initialize tensorboard with optional name."""
         if run_tb:
             while is_port_in_use(port) and port < 65535:
                 port += 1
@@ -146,7 +142,7 @@ class PatchTrainer:
 
     def read_image(self, path, pil_img_mode: str = "RGB") -> torch.Tensor:
         """
-        Read an input image to be used as a patch
+        Read an input image to be used as a patch.
 
         Arguments:
             path: Path to the image to be read.
@@ -157,9 +153,7 @@ class PatchTrainer:
         return adv_patch_cpu
 
     def train(self) -> None:
-        """
-        Optimize a patch to generate an adversarial example.
-        """
+        """Optimize a patch to generate an adversarial example."""
         # make output dirs
         patch_dir = osp.join(self.cfg.log_dir, "patches")
         os.makedirs(patch_dir, exist_ok=True)
@@ -284,9 +278,7 @@ class PatchTrainer:
         print(f"Total training time {time.time() - start_time:.2f}s")
 
     def val(self, epoch: int, patchfile: str, conf_thresh: float = 0.4, nms_thresh: float = 0.4) -> None:
-        """
-        Calculates the attack success rate according for the patch with respect to different bounding box areas
-        """
+        """Calculates the attack success rate according for the patch with respect to different bounding box areas."""
         # load patch from file
         patch_img = Image.open(patchfile).convert(self.cfg.patch_img_mode)
         patch_img = T.Resize(self.cfg.patch_size)(patch_img)

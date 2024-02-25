@@ -1,6 +1,4 @@
-"""
-Testing code for evaluating Adversarial patches against object detection
-"""
+"""Testing code for evaluating Adversarial patches against object detection."""
 import io
 import os
 import os.path as osp
@@ -47,9 +45,7 @@ torch.backends.cudnn.benchmark = False
 
 
 def eval_coco_metrics(anno_json: str, pred_json: str, txt_save_path: str, w_mode: str = "a") -> np.ndarray:
-    """
-    Compare and eval pred json producing coco metrics
-    """
+    """Compare and eval pred json producing coco metrics."""
     anno = COCO(anno_json)  # init annotations api
     pred = anno.loadRes(pred_json)  # init predictions api
     evaluator = COCOeval(anno, pred, "bbox")
@@ -69,9 +65,7 @@ def eval_coco_metrics(anno_json: str, pred_json: str, txt_save_path: str, w_mode
 
 
 class PatchTester:
-    """
-    Module for testing patches on dataset against object detection models
-    """
+    """Module for testing patches on dataset against object detection models."""
 
     def __init__(self, cfg: edict) -> None:
         self.cfg = cfg
@@ -96,8 +90,9 @@ class PatchTester:
         recompute_asr_all: bool = False,
     ) -> Tuple[float, float, float, float]:
         """
-        Calculate attack success rate (How many bounding boxes were hidden from the detector)
-        for all predictions and for different bbox areas.
+        Calculate attack success rate (How many bounding boxes were hidden from the detector) for all predictions and
+        for different bbox areas.
+
         Note cls_id is None, misclassifications are ignored and only missing detections are considered attack success.
         Args:
             boxes: torch.Tensor, first pass boxes (gt unpatched boxes) [class, x1, y1, x2, y2]
@@ -172,9 +167,7 @@ class PatchTester:
 
     @staticmethod
     def draw_bbox_on_pil_image(bbox: np.ndarray, padded_img_pil: Image, class_list: List[str]) -> Image:
-        """
-        Draw bounding box on a PIL image and return said image after drawing
-        """
+        """Draw bounding box on a PIL image and return said image after drawing."""
         padded_img_np = np.ascontiguousarray(padded_img_pil)
         label_2_class = dict(enumerate(class_list))
 

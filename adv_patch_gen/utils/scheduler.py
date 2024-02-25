@@ -17,8 +17,9 @@ EPOCH_DEPRECATION_WARNING = (
 
 
 class GradualWarmupScheduler(_LRScheduler):
-    """Sets the learning rate of parameter group to gradually increase for num_epochs from start_lr
-    to the original lr set for the optimizer
+    """
+    Sets the learning rate of parameter group to gradually increase for num_epochs from start_lr to the original lr set
+    for the optimizer.
 
     Args:
         optimizer (Optimizer): Wrapped optimizer.

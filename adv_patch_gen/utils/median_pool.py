@@ -4,7 +4,8 @@ from torch.nn.modules.utils import _pair, _quadruple
 
 
 class MedianPool2d(nn.Module):
-    """Median pool (usable as median filter when stride=1) module.
+    """
+    Median pool (usable as median filter when stride=1) module.
 
     Args:
          kernel_size: size of pooling kernel, int or 2-tuple

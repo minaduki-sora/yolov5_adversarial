@@ -164,9 +164,8 @@ class YoloOutputWrapper(torch.nn.Module):
         self.model = model
 
     def forward(self, x):
-        """
-        first one is a 3 dim array which contains predictions
-        second one is a list of heads with their corresponding predictions
+        """First one is a 3 dim array which contains predictions second one is a list of heads with their corresponding
+        predictions.
         """
         total_prediction, _ = self.model(x)
         return total_prediction

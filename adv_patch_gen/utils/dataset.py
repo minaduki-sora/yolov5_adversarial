@@ -1,6 +1,5 @@
-"""
-Dataset Class for loading YOLO format datasets where the source data dir has the image and labels subdirs
-where each image must have a corresponding label file with the same name
+"""Dataset Class for loading YOLO format datasets where the source data dir has the image and labels subdirs where each
+image must have a corresponding label file with the same name.
 """
 import glob
 import os.path as osp
@@ -18,7 +17,8 @@ IMG_EXTNS = {".png", ".jpg", ".jpeg"}
 
 
 class YOLODataset(Dataset):
-    """Create a dataset for adversarial-yolt.
+    """
+    Create a dataset for adversarial-yolt.
 
     Attributes:
         image_dir: Directory containing the images of the YOLO format dataset.
@@ -106,10 +106,8 @@ class YOLODataset(Dataset):
         return image, label
 
     def pad_and_scale(self, img, lab):
-        """
-        Pad image and adjust label
-            img is a PIL image
-            lab is of fmt class x_center y_center width height with normalized coords
+        """Pad image and adjust label img is a PIL image lab is of fmt class x_center y_center width height with
+        normalized coords.
         """
         img_w, img_h = img.size
         if img_w == img_h:
@@ -132,9 +130,7 @@ class YOLODataset(Dataset):
         return padded_img, lab
 
     def pad_label(self, label: torch.Tensor) -> torch.Tensor:
-        """
-        Pad labels with zeros if fewer labels than max_n_labels present
-        """
+        """Pad labels with zeros if fewer labels than max_n_labels present."""
         pad_size = self.max_n_labels - label.shape[0]
         if pad_size > 0:
             padded_lab = F.pad(label, (0, 0, 0, pad_size), value=0)

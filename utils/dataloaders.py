@@ -27,7 +27,8 @@ from torch.utils.data import DataLoader, Dataset, dataloader, distributed
 from tqdm import tqdm
 
 from utils.augmentations import (
-    BboxPatcher, Albumentations,
+    BboxPatcher,
+    Albumentations,
     augment_hsv,
     classify_albumentations,
     classify_transforms,
@@ -173,7 +174,8 @@ def create_dataloader(
     prefix="",
     shuffle=False,
     seed=0,
-    patch_dir=''):
+    patch_dir="",
+):
     if rect and shuffle:
         LOGGER.warning("WARNING ⚠️ --rect is incompatible with DataLoader shuffle, setting shuffle=False")
         shuffle = False
@@ -552,7 +554,8 @@ class LoadImagesAndLabels(Dataset):
         prefix="",
         rank=-1,
         seed=0,
-        patch_dir=''):
+        patch_dir="",
+    ):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -803,9 +806,9 @@ class LoadImagesAndLabels(Dataset):
                 )
 
         # bbox patch augmentation
-        if hyp and random.random() < hyp.get('bbox_patch', 0.0) and self.bbox_patcher.patches:
+        if hyp and random.random() < hyp.get("bbox_patch", 0.0) and self.bbox_patcher.patches:
             img = self.bbox_patcher(img, labels)
- 
+
         nl = len(labels)  # number of labels
         if nl:
             labels[:, 1:5] = xyxy2xywhn(labels[:, 1:5], w=img.shape[1], h=img.shape[0], clip=True, eps=1e-3)

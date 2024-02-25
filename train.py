@@ -262,7 +262,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         prefix=colorstr("train: "),
         shuffle=True,
         seed=opt.seed,
-        patch_dir=opt.patch_dir)
+        patch_dir=opt.patch_dir,
+    )
     labels = np.concatenate(dataset.labels, 0)
     mlc = int(labels[:, 0].max())  # max label class
     assert mlc < nc, f"Label class {mlc} exceeds nc={nc} in {data}. Possible class labels are 0-{nc - 1}"
@@ -544,7 +545,9 @@ def parse_opt(known=False):
     parser.add_argument("--freeze", nargs="+", type=int, default=[0], help="Freeze layers: backbone=10, first3=0 1 2")
     parser.add_argument("--save-period", type=int, default=-1, help="Save checkpoint every x epochs (disabled if < 1)")
     parser.add_argument("--seed", type=int, default=0, help="Global training seed")
-    parser.add_argument('--patch_dir', type=str, default='', help='Directory with images to apply as patch augmentation in train imgs')
+    parser.add_argument(
+        "--patch_dir", type=str, default="", help="Directory with images to apply as patch augmentation in train imgs"
+    )
     parser.add_argument("--local_rank", type=int, default=-1, help="Automatic DDP Multi-GPU argument, do not modify")
 
     # Logger arguments

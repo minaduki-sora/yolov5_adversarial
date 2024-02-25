@@ -1,15 +1,11 @@
-"""
-Create argparse options for config files
-"""
+"""Create argparse options for config files."""
 import json
 import argparse
 from easydict import EasyDict as edict
 
 
 def load_config_object(cfg_path: str) -> edict:
-    """
-    Loads a config json and returns a edict object
-    """
+    """Loads a config json and returns a edict object."""
     with open(cfg_path, "r", encoding="utf-8") as json_file:
         cfg_dict = json.load(json_file)
 
@@ -17,9 +13,7 @@ def load_config_object(cfg_path: str) -> edict:
 
 
 def get_argparser(desc="Config file load for training adv patches") -> argparse.ArgumentParser:
-    """
-    Get parser with the default config argument
-    """
+    """Get parser with the default config argument."""
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument(
         "--cfg",

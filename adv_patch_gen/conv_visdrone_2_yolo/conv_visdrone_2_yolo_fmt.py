@@ -1,7 +1,8 @@
 """
-Convert VisDrone annotation format to YOLO labels format
-Works for training of YOLOv5 and YOLOv7.
-YOLOv7 requires an additional txt file (Same name as the first parent directory) with paths to the images for the train, val & test splits
+Convert VisDrone annotation format to YOLO labels format Works for training of YOLOv5 and YOLOv7.
+
+YOLOv7 requires an additional txt file (Same name as the first parent directory) with paths to the images for the train,
+val & test splits
 """
 import os
 import os.path as osp

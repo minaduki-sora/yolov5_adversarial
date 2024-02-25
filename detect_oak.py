@@ -118,7 +118,8 @@ def inference(
     debug: bool = False,
     **kwrags,
 ) -> None:
-    """Run Object Detection Application
+    """
+    Run Object Detection Application.
 
     Args:
         weights: str = path to yolov5 model
@@ -234,7 +235,8 @@ def inference_threaded(
     debug: bool = False,
     **kwrags,
 ) -> None:
-    """Run Object Detection Application
+    """
+    Run Object Detection Application.
 
     Args:
         weights: str = path to yolov5 model
@@ -319,7 +321,8 @@ def inference_threaded_with_defense(
     cam_fps: int = 20,
     debug: bool = False,
 ) -> None:
-    """Run Object Detection Application
+    """
+    Run Object Detection Application.
 
     Args:
         weights: str = path to yolov5 model

@@ -1,4 +1,4 @@
-""" Modules for creating adversarial object patch """
+"""Modules for creating adversarial object patch."""
 import math
 from typing import Union, Tuple
 
