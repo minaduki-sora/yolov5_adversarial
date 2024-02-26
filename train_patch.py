@@ -22,7 +22,7 @@ from torch import optim, autograd
 from torch.cuda.amp import autocast
 from torchvision import transforms as T
 
-from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from tensorboard import program
 
 from models.common import DetectMultiBackend

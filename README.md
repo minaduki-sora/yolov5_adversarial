@@ -18,6 +18,8 @@ https://github.com/SamSamhuns/yolov5_adversarial/assets/13418507/b389449f-98a4-4
 | :----------------------------------------------------------: | :--------------------------------------------------------: |
 | <img src="adv_patch_gen/media/visdrone_p.png" width="256" /> | <img src="adv_patch_gen/media/custom_p.png" width="256" /> |
 
+## Setup
+
 Note: Install all required dependencies as mentioned in the main YOLOv5 repository and install additional yolov5 adversarial dependency as follows:
 
 ```shell
@@ -27,7 +29,17 @@ pip install -r adv_patch_gen/requirements.txt
 
 Detailed instructions for setup and docker use at [adv_patch_gen/README.md](adv_patch_gen/README.md)
 
+## Download VisDrone Dataset
+
+Download Task 1 trainset, valset, and testset-dev sets from <https://github.com/VisDrone/VisDrone-Dataset>. Place data under `data/visdrone_data`.
+
+## Conver VisDrone Dataset to YOLO format
+
+Refer to [adv_patch_gen/conv_visdrone_2_yolo/README.md](adv_patch_gen/conv_visdrone_2_yolo/README.md)
+
 ## Train an adversarial patch against the detector
+
+Dataset paths should be correctly set in the config json file.
 
 ```shell
 python train_patch.py --cfg adv_patch_gen/configs/base.json
