@@ -29,8 +29,10 @@ import imagesize
 # Class numbers are zero-indexed (start from 0).
 
 
-CLASS_2_CONSIDER = {1, 2, 4, 5, 6, 9}  # only get pedestrian, people, car, van, truck, bus classes from VisDrone
-CLASS_ID_REMAP = {4: 0, 5: 0, 6: 1, 9: 2, 1: 3, 2: 3}  # optionally remap class ids, can be set to None
+# CLASS_2_CONSIDER = {1, 2, 4, 5, 6, 9}  # only get pedestrian, people, car, van, truck, bus classes from VisDrone
+CLASS_2_CONSIDER = {4, 5, 6, 9}  # only get car, van, truck, bus classes from VisDrone
+# CLASS_ID_REMAP = {4: 0, 5: 0, 6: 1, 9: 2, 1: 3, 2: 3}  # optionally remap class ids, can be set to None
+CLASS_ID_REMAP = {4: 0, 5: 0, 6: 1, 9: 2}  # optionally remap class ids, can be set to None
 IMG_EXT = {".jpg", ".png"}
 
 
