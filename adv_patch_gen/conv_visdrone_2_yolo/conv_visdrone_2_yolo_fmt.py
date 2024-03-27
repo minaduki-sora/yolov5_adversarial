@@ -32,7 +32,7 @@ import imagesize
 # CLASS_2_CONSIDER = {1, 2, 4, 5, 6, 9}  # only get pedestrian, people, car, van, truck, bus classes from VisDrone
 CLASS_2_CONSIDER = {4, 5, 6, 9}  # only get car, van, truck, bus classes from VisDrone
 # CLASS_ID_REMAP = {4: 0, 5: 0, 6: 1, 9: 2, 1: 3, 2: 3}  # optionally remap class ids, can be set to None
-CLASS_ID_REMAP = {4: 0, 5: 0, 6: 1, 9: 2}  # optionally remap class ids, can be set to None
+CLASS_ID_REMAP = {4: 0, 5: 1, 6: 2, 9: 3}  # optionally remap class ids, can be set to None
 IMG_EXT = {".jpg", ".png"}
 
 
@@ -118,6 +118,9 @@ def conv_visdrone_2_yolo(
                         x, y = annots[0], annots[1]
                         w, h = annots[2], annots[3]
                         score, class_id, occu = annots[4], annots[5], annots[7]
+                        if class_id == 9:
+                            print(src_annot_file)
+                            print("there has bus")
                         if class_id not in CLASS_2_CONSIDER:  # only keep classes to consider
                             continue
                         orig_box_count += 1
